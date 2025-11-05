@@ -1,161 +1,170 @@
-
 -- RockModule.lua
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local hrp = char:WaitForChild("HumanoidRootPart")
+local Camera = Workspace.CurrentCamera
 
--- Island reference
-local IslandNameValue = Instance.new("StringValue")
-IslandNameValue.Name = "CurrentIsland"
-IslandNameValue.Value = "Unknown"
-IslandNameValue.Parent = LocalPlayer
+local RockModule = {}
+RockModule.loopActive = false
+RockModule.rockHighlights = {} -- [model] = Highlight
+RockModule.rockList = {}
 
--- Loop toggle
-local loopActive = false
-
--- Config: Tiers
-local ROCK_TIERS = {
-    [1] = {colors = {Color3.fromRGB(95,189,175)}, count = 0, rocks = {}},
-    [2] = {colors = {Color3.fromRGB(213,115,61)}, count = 0, rocks = {}},
-    [3] = {colors = {}, count = 0, rocks = {}}, -- default tier
+-- Configurable tiers (easy to add new ones)
+RockModule.Tiers = {
+    {name = "Tier 1", colors = {Color3.fromRGB(95,189,175), Color3.fromRGB(189,95,175), Color3.fromRGB(255,255,0), Color3.fromRGB(0,255,0)}, priority = 1},
+    {name = "Tier 2", colors = {Color3.fromRGB(213,115,61)}, priority = 2},
+    {name = "Tier 3", colors = {Color3.fromRGB(0,170,255)}, priority = 3} -- default
 }
 
--- Helper: Find island folder
-local function detectIsland()
-    local islandsFolder = Workspace:FindFirstChild("Islands")
-    if not islandsFolder then return nil end
-
-    local currentIsland = char and char.Parent
-    while currentIsland and currentIsland ~= islandsFolder and currentIsland ~= workspace do
-        if currentIsland.Parent == islandsFolder then
-            IslandNameValue.Value = currentIsland.Name
-            return currentIsland
-        end
-        currentIsland = currentIsland.Parent
-    end
-
-    IslandNameValue.Value = "Unknown"
-    return nil
+-- Reference to island (dynamic detection possible)
+function RockModule:GetIsland()
+    return Workspace:FindFirstChild("Islands") and Workspace.Islands:FindFirstChild("Volcano Island")
 end
 
--- Helper: Get all rock parts in model
-local function getRockParts(model)
+-- Highlight a rock with correct color
+function RockModule:HandleRock(model, color)
+    if model:FindFirstChildOfClass("Humanoid") then return end
+    color = color or self.Tiers[#self.Tiers].colors[1]
+    if not self.rockHighlights[model] then
+        local hl = Instance.new("Highlight")
+        hl.Adornee = model
+        hl.FillColor = color
+        hl.FillTransparency = 0.6
+        hl.OutlineColor = Color3.fromRGB(255,255,255)
+        hl.OutlineTransparency = 0
+        hl.Parent = Workspace
+        self.rockHighlights[model] = hl
+    else
+        self.rockHighlights[model].FillColor = color
+    end
+end
+
+-- Get parts of a rock model
+function RockModule:GetRockParts(model)
     local parts = {}
-    if model:FindFirstChild("Rock") then table.insert(parts, model.Rock) end
-    if model:FindFirstChild("Rocks") then table.insert(parts, model.Rocks) end
+    if model:FindFirstChild("Rock") and model.Rock:IsA("BasePart") then table.insert(parts, model.Rock) end
+    if model:FindFirstChild("Rocks") and model.Rocks:IsA("BasePart") then table.insert(parts, model.Rocks) end
     for _, desc in ipairs(model:GetDescendants()) do
-        if desc:IsA("BasePart") and tostring(desc.Name):find("Rocks 2") then
-            table.insert(parts, desc)
-        end
+        if desc:IsA("BasePart") and tostring(desc.Name):find("Rocks 2") then table.insert(parts, desc) end
     end
     return parts
 end
 
--- Helper: Determine rock tier based on color
-local function getRockTier(lightColor)
-    for tier, info in pairs(ROCK_TIERS) do
-        for _, c in ipairs(info.colors) do
-            local tol = 0.01
-            if math.abs(c.R - lightColor.R) < tol and
-               math.abs(c.G - lightColor.G) < tol and
-               math.abs(c.B - lightColor.B) < tol then
-                return tier
-            end
-        end
-    end
-    return 3 -- default tier
+-- Move near a rock
+function RockModule:TPNear(part)
+    if not self.loopActive or not part then return end
+    local direction = (hrp.Position - part.Position)
+    if direction.Magnitude == 0 then direction = Vector3.new(0,3,-2) end
+    local offset = direction.Unit * 5
+    hrp.CFrame = CFrame.new(part.Position + offset, part.Position)
+    Camera.CameraType = Enum.CameraType.Custom
+    Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
 end
 
--- Refresh rocks & counts
-local function refreshRocks()
-    local island = detectIsland()
-    if not island then return end
+-- Left click a rock safely
+function RockModule:ClickRock(part)
+    if not self.loopActive or not part or not part.Parent then return end
+    local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+    if not onScreen then
+        hrp.CFrame = CFrame.new(hrp.Position, part.Position)
+        Camera.CameraType = Enum.CameraType.Custom
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
+        task.wait(0.05)
+    end
+    screenPos = Camera:WorldToViewportPoint(part.Position)
+    VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, true, game, 0)
+    task.wait(0.1)
+    VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 0)
+end
 
-    -- Reset
-    for tier, info in pairs(ROCK_TIERS) do
-        info.count = 0
-        info.rocks = {}
+-- Refresh rock list with tiers
+function RockModule:RefreshRocks()
+    local island = self:GetIsland()
+    if not island then return end
+    local tierBuckets = {}
+    for i = 1, #self.Tiers do tierBuckets[i] = {} end
+    local tol = 0.01
+    local function colorMatches(c1, c2)
+        return math.abs(c1.R - c2.R) < tol and math.abs(c1.G - c2.G) < tol and math.abs(c1.B - c2.B) < tol
     end
 
     for _, model in ipairs(island:GetChildren()) do
-        if model.Name:sub(1,1) == "{" then
-            local parts = getRockParts(model)
+        if model.Name:sub(1,1) == "{" and not model:FindFirstChildOfClass("Humanoid") then
+            local parts = self:GetRockParts(model)
             if #parts == 0 then continue end
 
-            -- Determine tier by PointLight color
             local light = model:FindFirstChildWhichIsA("PointLight", true)
-            local tier = 3
-            if light then tier = getRockTier(light.Color) end
+            local tierIndex = #self.Tiers
+            local rockColor = self.Tiers[tierIndex].colors[1]
 
-            -- Save & count
-            table.insert(ROCK_TIERS[tier].rocks, model)
-            ROCK_TIERS[tier].count += 1
-
-            -- Highlight
-            if not model:FindFirstChild("RockHighlight") then
-                local hl = Instance.new("Highlight")
-                hl.Name = "RockHighlight"
-                hl.Adornee = model
-                hl.FillColor = ROCK_TIERS[tier].colors[1] or Color3.fromRGB(150,150,150)
-                hl.FillTransparency = 0.6
-                hl.OutlineColor = Color3.fromRGB(255,255,255)
-                hl.OutlineTransparency = 0
-                hl.Parent = Workspace
+            if light then
+                for i, tier in ipairs(self.Tiers) do
+                    for _, c in ipairs(tier.colors) do
+                        if colorMatches(light.Color, c) then
+                            tierIndex = i
+                            rockColor = c
+                            break
+                        end
+                    end
+                    if tierIndex == i then break end
+                end
             end
+
+            self:HandleRock(model, rockColor)
+            table.insert(tierBuckets[tierIndex], {model = model, parts = parts})
+        end
+    end
+
+    -- Merge tiers by priority
+    self.rockList = {}
+    for i = 1, #self.Tiers do
+        for _, r in ipairs(tierBuckets[i]) do
+            table.insert(self.rockList, r)
         end
     end
 end
 
--- Mining loop
-task.spawn(function()
-    while true do
-        if loopActive then
-            refreshRocks()
-
-            -- Mine loop (simple)
-            for tier = 1,3 do
-                for _, rock in ipairs(ROCK_TIERS[tier].rocks) do
-                    if not loopActive then break end
-                    if rock.PrimaryPart or rock:FindFirstChild("Rock") then
-                        local part = rock.PrimaryPart or rock:FindFirstChild("Rock")
-                        hrp.CFrame = CFrame.new(part.Position + Vector3.new(0,3,0), part.Position)
-                        task.wait(0.2)
-                        -- Simulate click
-                        if part:IsA("BasePart") then
-                            part:Destroy() -- placeholder, replace with VirtualInput click
-                        end
+-- Toggle mining loop
+function RockModule:ToggleLoop()
+    self.loopActive = not self.loopActive
+    if self.loopActive then
+        task.spawn(function()
+            while self.loopActive do
+                self:RefreshRocks()
+                for _, r in ipairs(self.rockList) do
+                    if not self.loopActive then break end
+                    local part = r.parts[1]
+                    if part and part.Parent then
+                        self:TPNear(part)
                         task.wait(0.5)
+                        self:ClickRock(part)
+
+                        local elapsed = 0
+                        while part.Parent and self.loopActive do
+                            task.wait(0.2)
+                            elapsed = elapsed + 0.2
+                            if elapsed >= 15 then break end
+                        end
+                        self:RefreshRocks()
                     end
                 end
+                task.wait(0.5)
             end
-        end
-        task.wait(1)
+        end)
     end
-end)
+    return self.loopActive
+end
 
--- Refresh on respawn
+-- Handle character respawn
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     char = newChar
     hrp = char:WaitForChild("HumanoidRootPart")
-    detectIsland()
+    Camera.CameraType = Enum.CameraType.Custom
+    RockModule.loopActive = false
 end)
-
--- Public API
-local RockModule = {}
-RockModule.Tiers = ROCK_TIERS
-RockModule.IslandName = IslandNameValue
-
-function RockModule.ToggleLoop()
-    loopActive = not loopActive
-    return loopActive
-end
-
-function RockModule.Refresh()
-    refreshRocks()
-end
 
 return RockModule
