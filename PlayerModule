@@ -1,6 +1,7 @@
 -- PlayerModule.lua
 local PlayerModule = {}
 
+-- SETTINGS
 PlayerModule.settings = {
     FlyEnabled = false,
     FlySpeed = 60,
@@ -10,19 +11,19 @@ PlayerModule.settings = {
     NoClip = false,
 }
 
+-- SERVICES
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local Character, Humanoid
-
 local flying = false
 local bodyVelocity, bodyAngularVelocity
 local noclipParts = {}
 local initialCanCollide = {}
 
--- Setup character
+-- HELPER: Setup character
 local function setupCharacter(char)
     Character = char
     Humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -31,18 +32,18 @@ end
 setupCharacter(player.Character or player.CharacterAdded:Wait())
 player.CharacterAdded:Connect(setupCharacter)
 
--- Fly
+-- FLY FUNCTIONS
 local function startFlying()
     if not Character or not Character:FindFirstChild("HumanoidRootPart") then return end
-
     local hrp = Character.HumanoidRootPart
+
     bodyVelocity = Instance.new("BodyVelocity")
-    bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+    bodyVelocity.MaxForce = Vector3.new(1e5,1e5,1e5)
     bodyVelocity.Velocity = Vector3.zero
     bodyVelocity.Parent = hrp
 
     bodyAngularVelocity = Instance.new("BodyAngularVelocity")
-    bodyAngularVelocity.MaxTorque = Vector3.new(4000, 4000, 4000)
+    bodyAngularVelocity.MaxTorque = Vector3.new(1e5,1e5,1e5)
     bodyAngularVelocity.AngularVelocity = Vector3.zero
     bodyAngularVelocity.Parent = hrp
 
@@ -55,45 +56,47 @@ local function stopFlying()
     flying = false
 end
 
--- Update fly movement & orientation
+-- Smooth fly movement & camera facing
 RunService.Heartbeat:Connect(function()
     if flying and Character and Character:FindFirstChild("HumanoidRootPart") then
         local hrp = Character.HumanoidRootPart
-        local camera = workspace.CurrentCamera
-        local moveVector = Vector3.zero
+        local cam = workspace.CurrentCamera
+        local move = Vector3.zero
 
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVector += camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVector -= camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVector -= camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVector += camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVector += Vector3.new(0,1,0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVector -= Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0,1,0) end
 
         if bodyVelocity then
-            bodyVelocity.Velocity = moveVector * PlayerModule.settings.FlySpeed
+            bodyVelocity.Velocity = move.Unit * PlayerModule.settings.FlySpeed
         end
 
-        -- Rotate character to face camera direction
-        local lookVector = camera.CFrame.LookVector
-        hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + Vector3.new(lookVector.X, 0, lookVector.Z))
+        -- Face movement direction if moving
+        if move.Magnitude > 0 then
+            local look = CFrame.new(hrp.Position, hrp.Position + Vector3.new(move.X, 0, move.Z))
+            hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, look.YRotation, 0)
+        end
     end
 end)
 
--- WalkSpeed
+-- WALKSPEED: Only modify when enabled
 RunService.Heartbeat:Connect(function()
-    if Character and Humanoid and PlayerModule.settings.WalkSpeedEnabled then
+    if Humanoid and PlayerModule.settings.WalkSpeedEnabled then
         Humanoid.WalkSpeed = PlayerModule.settings.WalkSpeed
     end
 end)
 
--- Infinite Jump
+-- INFINITE JUMP
 UserInputService.JumpRequest:Connect(function()
     if PlayerModule.settings.InfiniteJump and Humanoid then
         Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
     end
 end)
 
--- NoClip
+-- NOCLIP
 RunService.Stepped:Connect(function()
     if not PlayerModule.settings.NoClip or not Character then return end
     for _, part in ipairs(Character:GetDescendants()) do
@@ -107,14 +110,10 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- PUBLIC
+-- PUBLIC FUNCTIONS
 function PlayerModule.ToggleFly(enabled)
     PlayerModule.settings.FlyEnabled = enabled
-    if enabled then
-        startFlying()
-    else
-        stopFlying()
-    end
+    if enabled then startFlying() else stopFlying() end
 end
 
 function PlayerModule.ToggleWalkSpeed(enabled)
