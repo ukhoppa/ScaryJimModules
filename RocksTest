@@ -1,156 +1,174 @@
--- Rocks module
+-- Rocks.lua
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local hrp = char:WaitForChild("HumanoidRootPart")
 
-local Rocks = {}
+-- Island name tracker
+local CurrentIsland = Instance.new("StringValue")
+CurrentIsland.Name = "CurrentIsland"
+CurrentIsland.Value = "Unknown"
+CurrentIsland.Parent = LocalPlayer
 
--- Island tracking
-local IslandNameValue = Instance.new("StringValue")
-IslandNameValue.Name = "CurrentIsland"
-IslandNameValue.Value = "Unknown"
-IslandNameValue.Parent = LocalPlayer
-
--- Loop toggle
-local loopActive = false
-
--- Table of rock types for counting and mining priority
-Rocks.Tiers = {
-    VolcanicBoulder = {name = "Volcanic Boulders", color = Color3.fromRGB(255,140,0), rocks = {}, count = 0},
-    PrismaticGem = {name = "Prismatic Gems", rocks = {}, count = 0},
-    MineralGem = {name = "Mineral Gems", rocks = {}, count = 0},
-    MineralRock = {name = "Mineral Rocks", rocks = {}, count = 0},
-    NormalRock = {name = "Normal Rocks", color = Color3.fromRGB(163,162,165), rocks = {}, count = 0}, -- always last
+-- Rock counts & storage
+local Tiers = {
+    NormalRock = {count = 0, rocks = {}},
+    MineralRock = {count = 0, rocks = {}},
+    MineralGem = {count = 0, rocks = {}},
+    PrismaticGem = {count = 0, rocks = {}},
+    VolcanicBoulder = {count = 0, rocks = {}}
 }
 
--- Function: Detect current island folder
+-- Helper: detect current island dynamically
 local function detectIsland()
     local islandsFolder = Workspace:FindFirstChild("Islands")
-    if not islandsFolder then
-        IslandNameValue.Value = "Unknown"
-        return nil
-    end
+    if not islandsFolder then return nil end
 
-    local currentParent = char and char.Parent
-    while currentParent and currentParent ~= islandsFolder and currentParent ~= Workspace do
-        if currentParent.Parent == islandsFolder then
-            IslandNameValue.Value = currentParent.Name
-            return currentParent
+    local parent = char and char.Parent
+    while parent and parent ~= islandsFolder and parent ~= workspace do
+        if parent.Parent == islandsFolder then
+            CurrentIsland.Value = parent.Name
+            return parent
         end
-        currentParent = currentParent.Parent
+        parent = parent.Parent
     end
-
-    IslandNameValue.Value = "Unknown"
+    CurrentIsland.Value = "Unknown"
     return nil
 end
 
--- Helper: Clear previous data
-local function clearRocks()
-    for _, tier in pairs(Rocks.Tiers) do
-        tier.rocks = {}
-        tier.count = 0
-    end
-end
-
--- Helper: Check rock type and categorize
-local function categorizeRock(model)
-    if not model:IsA("Model") then return end
-    local children = model:GetChildren()
-
-    -- Volcanic Boulder: 1 part named "Rock"
-    if #children == 1 and children[1]:IsA("BasePart") and children[1].Name == "Rock" then
-        table.insert(Rocks.Tiers.VolcanicBoulder.rocks, model)
-        Rocks.Tiers.VolcanicBoulder.count += 1
-        return
-    end
-
-    -- Normal Rock: single part named contains "Rocks 2"
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") and tostring(part.Name):find("Rocks 2") then
-            table.insert(Rocks.Tiers.NormalRock.rocks, model)
-            Rocks.Tiers.NormalRock.count += 1
-            return
+-- Helper: classify rock by its parts & color
+local function classifyRock(model)
+    local parts = model:GetDescendants()
+    -- Collect only BaseParts
+    local baseParts = {}
+    for _, p in ipairs(parts) do
+        if p:IsA("BasePart") then
+            table.insert(baseParts, p)
         end
     end
 
-    -- Mineral Rocks / Gems / Prismatic Gems
-    -- Count parts named "Primary" and check PointLight if exists
-    local primaryParts = {}
-    local rocksPart
-    for _, part in ipairs(children) do
-        if part:IsA("BasePart") then
-            if part.Name == "Rocks" then
-                rocksPart = part
-            elseif part.Name == "Primary" then
-                table.insert(primaryParts, part)
+    -- 1. Normal Rock
+    if #baseParts == 1 and baseParts[1].Name:find("Rocks 2") then
+        return "NormalRock", baseParts[1].Color
+
+    -- 2. Mineral Rock
+    elseif #baseParts == 6 then
+        local primaryParts = {}
+        local rocksPart
+        for _, p in ipairs(baseParts) do
+            if p.Name == "Primary" then
+                table.insert(primaryParts, p)
+            elseif p.Name == "Rocks" then
+                rocksPart = p
             end
         end
-    end
+        if #primaryParts == 5 and rocksPart then
+            return "MineralRock", primaryParts[1].Color
+        end
 
-    if #primaryParts == 5 and rocksPart then
-        table.insert(Rocks.Tiers.MineralRock.rocks, model)
-        Rocks.Tiers.MineralRock.count += 1
-        return
-    elseif #primaryParts == 7 and rocksPart then
-        -- Check for PointLight in second child (attachment)
-        local attachment = children[2]:FindFirstChildWhichIsA("Attachment") or children[2]
-        local pointLight = attachment:FindFirstChildWhichIsA("PointLight")
-        if pointLight then
-            local c = pointLight.Color
-            -- Prismatic Gem: switches color between two options
-            if (c == Color3.fromRGB(112,189,95)) or (c == Color3.fromRGB(95,189,175)) then
-                table.insert(Rocks.Tiers.PrismaticGem.rocks, model)
-                Rocks.Tiers.PrismaticGem.count += 1
+    -- 3. Mineral Gem
+    elseif #baseParts == 8 then
+        local primaryParts = {}
+        local rocksPart
+        for _, p in ipairs(baseParts) do
+            if p.Name == "Primary" then
+                table.insert(primaryParts, p)
+            elseif p.Name == "Rocks" then
+                rocksPart = p
+            end
+        end
+        if #primaryParts == 7 and rocksPart then
+            -- Check for pointlight color
+            local lightColor
+            if rocksPart:FindFirstChild("Attachment") and rocksPart.Attachment:FindFirstChild("Primary") then
+                lightColor = rocksPart.Attachment.Primary.Color
             else
-                table.insert(Rocks.Tiers.MineralGem.rocks, model)
-                Rocks.Tiers.MineralGem.count += 1
+                lightColor = primaryParts[1].Color
             end
-        else
-            table.insert(Rocks.Tiers.MineralGem.rocks, model)
-            Rocks.Tiers.MineralGem.count += 1
+            return "MineralGem", lightColor
         end
+
+    -- 4. Prismatic Gem
+    elseif #baseParts == 8 then
+        local primaryParts = {}
+        local rocksPart
+        for _, p in ipairs(baseParts) do
+            if p.Name == "Primary" then
+                table.insert(primaryParts, p)
+            elseif p.Name == "Rocks" then
+                rocksPart = p
+            end
+        end
+        if #primaryParts == 7 and rocksPart then
+            -- Look for specific color alternation
+            local color1 = Color3.fromRGB(112, 189, 95)
+            local color2 = Color3.fromRGB(95, 189, 175)
+            local found
+            for _, p in ipairs(primaryParts) do
+                if (p.Color - color1).Magnitude < 0.01 or (p.Color - color2).Magnitude < 0.01 then
+                    found = p.Color
+                    break
+                end
+            end
+            return "PrismaticGem", found or primaryParts[1].Color
+        end
+
+    -- 5. Volcanic Boulder
+    elseif #baseParts == 1 and baseParts[1].Name == "Rock" then
+        local c = baseParts[1].Color
+        -- check for deep orange or 255,140,0
+        local orangeColor = Color3.fromRGB(255, 140, 0)
+        return "VolcanicBoulder", (c - orangeColor).Magnitude < 0.05 and orangeColor or c
     end
+
+    return nil, nil
 end
 
--- Refresh rocks list
+-- Refresh rocks & counts
 local function refreshRocks()
-    clearRocks()
     local island = detectIsland()
-    if not island then return end
+    if not island then
+        for _, tier in pairs(Tiers) do
+            tier.count = 0
+            tier.rocks = {}
+        end
+        return
+    end
+
+    -- Reset counts
+    for _, tier in pairs(Tiers) do
+        tier.count = 0
+        tier.rocks = {}
+    end
 
     for _, model in ipairs(island:GetChildren()) do
-        if model.Name:sub(1,1) == "{" then
-            categorizeRock(model)
+        if model:IsA("Model") and model.Name:sub(1,1) == "{" then
+            local rockType, color = classifyRock(model)
+            if rockType then
+                table.insert(Tiers[rockType].rocks, {model = model, color = color})
+                Tiers[rockType].count += 1
+            end
         end
     end
 end
 
--- Separate loop to update counts every second
+-- Auto-update loop
 task.spawn(function()
     while true do
-        if loopActive then
-            refreshRocks()
-        end
+        refreshRocks()
         task.wait(1)
     end
 end)
 
--- API
-function Rocks.ToggleLoop()
-    loopActive = not loopActive
-    return loopActive
+-- Public API
+local RockModule = {}
+RockModule.GetIslandName = function()
+    return CurrentIsland.Value
 end
+RockModule.Tiers = Tiers
+RockModule.Refresh = refreshRocks
 
-function Rocks.Refresh()
-    refreshRocks()
-end
-
-function Rocks.GetIslandName()
-    return IslandNameValue.Value
-end
-
-return Rocks
+return RockModule
