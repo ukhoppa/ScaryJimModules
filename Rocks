@@ -18,17 +18,20 @@ IslandNameValue.Parent = LocalPlayer
 -- Loop toggle
 local loopActive = false
 
--- Config: Tiers (easy to add new tiers)
+-- Config: Tiers (easy to extend)
 local ROCK_TIERS = {
     [1] = {colors = {Color3.fromRGB(95,189,175)}, rocks = {}},
     [2] = {colors = {Color3.fromRGB(213,115,61)}, rocks = {}},
     [3] = {colors = {Color3.fromRGB(0,170,255)}, rocks = {}}, -- default tier
 }
 
--- Detect current island
+-- Dynamic island detection
 local function detectIsland()
     local islandsFolder = Workspace:FindFirstChild("Islands")
-    if not islandsFolder then return nil end
+    if not islandsFolder then 
+        IslandNameValue.Value = "Unknown"
+        return nil
+    end
 
     local currentIsland = char and char.Parent
     while currentIsland and currentIsland ~= islandsFolder and currentIsland ~= workspace do
@@ -43,7 +46,7 @@ local function detectIsland()
     return nil
 end
 
--- Get all parts of a rock
+-- Get all rock parts
 local function getRockParts(model)
     local parts = {}
     if model:FindFirstChild("Rock") then table.insert(parts, model.Rock) end
@@ -56,7 +59,7 @@ local function getRockParts(model)
     return parts
 end
 
--- Determine rock tier based on PointLight color
+-- Determine rock tier
 local function getRockTier(lightColor)
     for tier, info in pairs(ROCK_TIERS) do
         for _, c in ipairs(info.colors) do
@@ -66,10 +69,10 @@ local function getRockTier(lightColor)
             end
         end
     end
-    return 3 -- default tier
+    return 3
 end
 
--- Highlight rock
+-- Highlight rocks
 local function highlightRock(model, tier)
     if not model or model:FindFirstChild("RockHighlight") then return end
     local hl = Instance.new("Highlight")
@@ -82,12 +85,11 @@ local function highlightRock(model, tier)
     hl.Parent = Workspace
 end
 
--- Refresh rocks list & highlight
+-- Refresh rocks and counts dynamically
 local function refreshRocks()
     local island = detectIsland()
     if not island then return end
 
-    -- Clear previous
     for tier, info in pairs(ROCK_TIERS) do
         info.rocks = {}
     end
@@ -107,17 +109,17 @@ local function refreshRocks()
     end
 end
 
--- Move near rock
+-- Move player near rock
 local function tpNear(part)
-    local direction = (hrp.Position - part.Position)
-    if direction.Magnitude == 0 then direction = Vector3.new(0,3,-2) end
-    local offset = direction.Unit * 5
-    hrp.CFrame = CFrame.new(part.Position + offset, part.Position)
+    if not part then return end
+    local dir = (hrp.Position - part.Position)
+    if dir.Magnitude == 0 then dir = Vector3.new(0,3,-2) end
+    hrp.CFrame = CFrame.new(part.Position + dir.Unit*5, part.Position)
     Camera.CameraType = Enum.CameraType.Custom
     Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
 end
 
--- Left click rock safely
+-- Left click rock
 local function clickRock(part)
     if not part or not part.Parent then return end
     local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
@@ -133,33 +135,35 @@ local function clickRock(part)
     VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 0)
 end
 
--- Mining loop
+-- Continuous mining loop
 task.spawn(function()
     while true do
         if loopActive then
-            refreshRocks()
-            for tier = 1,3 do
-                for _, rock in ipairs(ROCK_TIERS[tier].rocks) do
-                    if not loopActive then break end
-                    local part = rock.PrimaryPart or rock:FindFirstChild("Rock")
-                    if part and part.Parent then
-                        tpNear(part)
-                        task.wait(0.2)
-                        clickRock(part)
-
-                        -- wait until rock disappears or timeout
-                        local elapsed = 0
-                        while part.Parent and loopActive do
+            local island = detectIsland()
+            if island then
+                refreshRocks()
+                for tier = 1, #ROCK_TIERS do
+                    for _, rock in ipairs(ROCK_TIERS[tier].rocks) do
+                        if not loopActive then break end
+                        local part = rock.PrimaryPart or rock:FindFirstChild("Rock")
+                        if part and part.Parent then
+                            tpNear(part)
                             task.wait(0.2)
-                            elapsed = elapsed + 0.2
-                            if elapsed >= 15 then break end
+                            clickRock(part)
+
+                            local elapsed = 0
+                            while part.Parent and loopActive do
+                                task.wait(0.2)
+                                elapsed += 0.2
+                                if elapsed >= 15 then break end
+                            end
+                            refreshRocks()
                         end
-                        refreshRocks()
                     end
                 end
             end
         end
-        task.wait(1)
+        task.wait(0.5)
     end
 end)
 
