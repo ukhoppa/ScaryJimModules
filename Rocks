@@ -1,4 +1,4 @@
-Rayfield:Notify({Title = "🌋 Rocks", Content = "Rock module loaded", Duration = 5})
+
 -- RockModule.lua
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
