@@ -4,8 +4,8 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
-local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local hrp = char:WaitForChild("HumanoidRootPart")
+local char
+local hrp
 
 -- Island reference
 local CurrentIsland = Instance.new("StringValue")
@@ -24,6 +24,12 @@ local ROCK_TIERS = {
 
 -- Master list in mining order: best first
 local MiningList = {}
+
+-- Wait until character is fully loaded
+local function waitForCharacter()
+    char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    hrp = char:WaitForChild("HumanoidRootPart")
+end
 
 -- Utility: detect current island folder
 local function detectIsland()
@@ -68,7 +74,6 @@ local function classifyRock(model)
     if #primaryParts == 5 and rocksPart then
         return "MineralRock", parts
     elseif #primaryParts == 7 and rocksPart then
-        -- Default to PrismaticGem
         return "PrismaticGem", parts
     end
 
@@ -88,7 +93,7 @@ local function highlightRock(model, tier)
     hl.Parent = Workspace
 end
 
--- Refresh rocks & counts (used only once per island or on major refresh)
+-- Refresh rocks & counts (used once per island or major refresh)
 local function refreshRocks()
     local island = detectIsland()
     if not island then return end
@@ -135,6 +140,7 @@ end
 
 -- Setup island watcher for new/despawned rocks
 local function setupIslandWatcher()
+    waitForCharacter() -- ensure char is ready
 	local lastIsland = nil
 
 	task.spawn(function()
@@ -143,7 +149,7 @@ local function setupIslandWatcher()
 			if island and island ~= lastIsland then
 				lastIsland = island
 				clearConnections()
-				refreshRocks()
+				refreshRocks() -- refresh rocks once when island changes
 
 				-- Listen for new rocks
 				table.insert(currentConnections, island.ChildAdded:Connect(function(child)
@@ -189,7 +195,11 @@ setupIslandWatcher()
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     char = newChar
     hrp = newChar:WaitForChild("HumanoidRootPart")
-    detectIsland()
+    -- immediately detect island and refresh rocks
+    local island = detectIsland()
+    if island then
+        refreshRocks()
+    end
 end)
 
 -- Public API
@@ -198,8 +208,6 @@ RockModule.Tiers = ROCK_TIERS
 RockModule.MiningList = MiningList
 RockModule.GetIslandName = function() return CurrentIsland.Value end
 RockModule.Refresh = refreshRocks
-RockModule.ToggleLoop = function(state) -- kept for compatibility
-    return false -- loop not needed anymore
-end
+RockModule.ToggleLoop = function() return false end -- loop not needed anymore
 
 return RockModule
