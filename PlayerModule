@@ -1,0 +1,176 @@
+-- PlayerModule.lua
+local PlayerModule = {}
+
+----------------------------------------------------
+-- SETTINGS
+----------------------------------------------------
+PlayerModule.settings = {
+    FlyEnabled = false,
+    FlySpeed = 60,
+
+    WalkSpeedEnabled = false,
+    WalkSpeed = 16,
+
+    InfiniteJump = false,
+    NoClip = false,
+}
+
+----------------------------------------------------
+-- SERVICES
+----------------------------------------------------
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+
+----------------------------------------------------
+-- STATE
+----------------------------------------------------
+local Character, Humanoid
+local flying = false
+local bodyVelocity, bodyAngularVelocity
+local noclipParts = {}
+local initialCanCollide = {}
+
+----------------------------------------------------
+-- CHARACTER SETUP
+----------------------------------------------------
+local function setupCharacter(char)
+    Character = char
+    Humanoid = char:FindFirstChildOfClass("Humanoid")
+end
+
+setupCharacter(player.Character or player.CharacterAdded:Wait())
+player.CharacterAdded:Connect(setupCharacter)
+
+----------------------------------------------------
+-- FLY SYSTEM
+----------------------------------------------------
+local function startFlying()
+    if not Character or not Character:FindFirstChild("HumanoidRootPart") then return end
+
+    local hrp = Character.HumanoidRootPart
+    bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+    bodyVelocity.Velocity = Vector3.zero
+    bodyVelocity.Parent = hrp
+
+    bodyAngularVelocity = Instance.new("BodyAngularVelocity")
+    bodyAngularVelocity.MaxTorque = Vector3.new(4000, 4000, 4000)
+    bodyAngularVelocity.AngularVelocity = Vector3.zero
+    bodyAngularVelocity.Parent = hrp
+
+    flying = true
+    print("[PlayerModule] ✈️ Fly enabled")
+end
+
+local function stopFlying()
+    if bodyVelocity then bodyVelocity:Destroy() bodyVelocity = nil end
+    if bodyAngularVelocity then bodyAngularVelocity:Destroy() bodyAngularVelocity = nil end
+    flying = false
+    print("[PlayerModule] ✈️ Fly disabled")
+end
+
+RunService.Heartbeat:Connect(function()
+    if flying and Character and Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = Character.HumanoidRootPart
+        local camera = workspace.CurrentCamera
+        local moveVector = Vector3.zero
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVector += camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVector -= camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVector -= camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVector += camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVector += Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVector -= Vector3.new(0,1,0) end
+
+        if bodyVelocity then
+            bodyVelocity.Velocity = moveVector * PlayerModule.settings.FlySpeed
+        end
+    end
+end)
+
+----------------------------------------------------
+-- WALKSPEED SYSTEM
+-- Only set WalkSpeed if enabled, leave server default otherwise
+----------------------------------------------------
+RunService.Heartbeat:Connect(function()
+    if Character and Humanoid then
+        if PlayerModule.settings.WalkSpeedEnabled then
+            Humanoid.WalkSpeed = PlayerModule.settings.WalkSpeed
+        end
+    end
+end)
+
+----------------------------------------------------
+-- INFINITE JUMP
+----------------------------------------------------
+UserInputService.JumpRequest:Connect(function()
+    if PlayerModule.settings.InfiniteJump and Humanoid then
+        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+----------------------------------------------------
+-- NOCLIP SYSTEM
+----------------------------------------------------
+RunService.Stepped:Connect(function()
+    if not PlayerModule.settings.NoClip or not Character then return end
+
+    for _, part in ipairs(Character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if initialCanCollide[part] == nil then
+                initialCanCollide[part] = part.CanCollide
+            end
+            part.CanCollide = false
+            noclipParts[part] = true
+        end
+    end
+end)
+
+----------------------------------------------------
+-- PUBLIC FUNCTIONS
+----------------------------------------------------
+function PlayerModule.ToggleFly(enabled)
+    PlayerModule.settings.FlyEnabled = enabled
+    if enabled then
+        startFlying()
+    else
+        stopFlying()
+    end
+end
+
+function PlayerModule.ToggleWalkSpeed(enabled)
+    PlayerModule.settings.WalkSpeedEnabled = enabled
+end
+
+function PlayerModule.ToggleInfiniteJump(enabled)
+    PlayerModule.settings.InfiniteJump = enabled
+end
+
+function PlayerModule.ToggleNoClip(enabled)
+    PlayerModule.settings.NoClip = enabled
+    if not enabled then
+        for part, _ in pairs(noclipParts) do
+            if part and part.Parent then
+                part.CanCollide = initialCanCollide[part] or true
+            end
+        end
+        noclipParts = {}
+    else
+        print("[PlayerModule] 🚫 NoClip enabled")
+    end
+end
+
+function PlayerModule.Cleanup()
+    stopFlying()
+    PlayerModule.ToggleNoClip(false)
+    PlayerModule.ToggleWalkSpeed(false)
+    PlayerModule.ToggleInfiniteJump(false)
+end
+
+----------------------------------------------------
+-- RETURN MODULE
+----------------------------------------------------
+return PlayerModule
