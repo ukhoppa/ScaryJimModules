@@ -87,7 +87,7 @@ local function highlightRock(model, tier)
     hl.Adornee = model
     hl.FillColor = ROCK_TIERS[tier].highlightColor
     hl.FillTransparency = 0.6
-    hl.OutlineColor = Color3.fromRGB(255,255,255)
+    hl.OutlineColor = ROCK_TIERS[tier].highlightColor
     hl.OutlineTransparency = 0
     hl.Parent = Workspace
 end
