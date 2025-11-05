@@ -1,72 +1,60 @@
--- Rocks module
+-- Rocks module skeleton
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
-local Rocks = {}
-
--- Local player
 local LocalPlayer = Players.LocalPlayer
 local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-
--- References
 local hrp = char:WaitForChild("HumanoidRootPart")
 
--- Island info
-local IslandFolder = nil
-local CurrentIslandValue = Instance.new("StringValue")
-CurrentIslandValue.Name = "CurrentIsland"
-CurrentIslandValue.Value = "Unknown"
-CurrentIslandValue.Parent = LocalPlayer
+local Rocks = {}
 
--- Loop control
-local loopActive = true -- internal loop for updating island
+-- StringValue to store current island name for Rayfield
+local IslandNameValue = Instance.new("StringValue")
+IslandNameValue.Name = "CurrentIsland"
+IslandNameValue.Value = "Unknown"
+IslandNameValue.Parent = LocalPlayer
 
--- Helper: detect the player's island folder
+-- Function to detect the island folder
 local function detectIsland()
     local islandsFolder = Workspace:FindFirstChild("Islands")
-    if not islandsFolder then
-        CurrentIslandValue.Value = "Unknown"
-        return nil
-    end
+    if not islandsFolder then return nil end
 
-    local current = char.Parent
-    while current and current ~= islandsFolder and current ~= workspace do
-        if current.Parent == islandsFolder then
-            IslandFolder = current
-            CurrentIslandValue.Value = current.Name
-            return IslandFolder
+    local currentIsland = char and char.Parent
+    while currentIsland and currentIsland ~= islandsFolder and currentIsland ~= workspace do
+        if currentIsland.Parent == islandsFolder then
+            IslandNameValue.Value = currentIsland.Name
+            return currentIsland
         end
-        current = current.Parent
+        currentIsland = currentIsland.Parent
     end
 
-    IslandFolder = nil
-    CurrentIslandValue.Value = "Unknown"
+    IslandNameValue.Value = "Unknown"
     return nil
 end
 
--- Public API to get current island folder
-function Rocks.GetIslandFolder()
-    return IslandFolder or detectIsland()
+-- Public API
+function Rocks.GetIsland()
+    return detectIsland()
 end
 
--- Public API to get current island name
 function Rocks.GetIslandName()
-    return CurrentIslandValue.Value
+    return IslandNameValue.Value
 end
 
--- Loop to update island every second
+-- Auto-update island every second
 task.spawn(function()
-    while loopActive do
+    while true do
         detectIsland()
         task.wait(1)
     end
 end)
 
--- Cleanup
-function Rocks.Stop()
-    loopActive = false
-end
+-- Update references on respawn
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    char = newChar
+    hrp = newChar:WaitForChild("HumanoidRootPart")
+    detectIsland() -- update immediately
+end)
 
--- Return module
 return Rocks
