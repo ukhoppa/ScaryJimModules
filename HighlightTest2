@@ -1,14 +1,14 @@
 ------------ Rocks.lua ------------
-local Players = game:GetService("Players")
+local Players   = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local hrp = char:WaitForChild("HumanoidRootPart")
+local hrp  = char:WaitForChild("HumanoidRootPart")
 
 -- Island reference
 local CurrentIsland = Instance.new("StringValue")
-CurrentIsland.Name = "CurrentIsland"
+CurrentIsland.Name  = "CurrentIsland"
 CurrentIsland.Value = "Unknown"
 CurrentIsland.Parent = LocalPlayer
 
@@ -24,10 +24,12 @@ local ROCK_TIERS = {
     NormalRock      = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(163,162,165)},
 }
 
+-- Master list (mining order)
 local MiningList = {}
-local DrawnRocks = {} -- cache to track drawn highlights
+-- Highlight registry
+local RockHighlights = {}
 
--- Detect current island (keep your working version)
+-- 🔍 Detect island
 local function detectIsland()
     local islandsFolder = Workspace:FindFirstChild("Islands")
     if not islandsFolder then
@@ -35,24 +37,24 @@ local function detectIsland()
         return nil
     end
 
-    local currentParent = char and char.Parent
-    while currentParent and currentParent ~= islandsFolder and currentParent ~= workspace do
-        if currentParent.Parent == islandsFolder then
-            CurrentIsland.Value = currentParent.Name
-            return currentParent
+    local parent = char and char.Parent
+    while parent and parent ~= islandsFolder and parent ~= workspace do
+        if parent.Parent == islandsFolder then
+            CurrentIsland.Value = parent.Name
+            return parent
         end
-        currentParent = currentParent.Parent
+        parent = parent.Parent
     end
 
     CurrentIsland.Value = "Unknown"
     return nil
 end
 
--- Classify rock based on structure
+-- 🧩 Classify rocks by structure
 local function classifyRock(model)
     local parts = model:GetDescendants()
-    local primaryParts = {}
-    local rocksPart
+    local primaryParts, rocksPart = {}, nil
+
     for _, p in ipairs(parts) do
         if p:IsA("BasePart") then
             if p.Name == "Primary" then
@@ -70,95 +72,127 @@ local function classifyRock(model)
     if #primaryParts == 5 and rocksPart then
         return "MineralRock", parts
     elseif #primaryParts == 7 and rocksPart then
-        return "PrismaticGem", parts
+        local light = model:FindFirstChildWhichIsA("PointLight", true)
+        if light then
+            local c = light.Color
+            if (math.abs(c.R - 0.44) < 0.05 and math.abs(c.G - 0.74) < 0.05 and math.abs(c.B - 0.37) < 0.05)
+            or (math.abs(c.R - 0.37) < 0.05 and math.abs(c.G - 0.74) < 0.05 and math.abs(c.B - 0.69) < 0.05) then
+                return "PrismaticGem", parts
+            end
+        end
+        return "MineralGem", parts
     end
 
     return nil, {}
 end
 
--- Draw highlight once
-local function drawHighlight(model, tier)
-    if DrawnRocks[model] then return end -- already drawn
+-- ✨ Highlight (only once)
+local function addHighlight(model, tier)
+    if RockHighlights[model] then return end
     local hl = Instance.new("Highlight")
     hl.Name = "RockHighlight"
     hl.Adornee = model
     hl.FillColor = ROCK_TIERS[tier].highlightColor
     hl.FillTransparency = 0.6
-    hl.OutlineColor = ROCK_TIERS[tier].highlightColor
+    hl.OutlineColor = Color3.fromRGB(255,255,255)
     hl.OutlineTransparency = 0
     hl.Parent = Workspace
-    DrawnRocks[model] = hl
+    RockHighlights[model] = hl
 end
 
--- Remove highlight if rock despawns
-local function cleanupMissingRocks(currentModels)
-    for model, hl in pairs(DrawnRocks) do
-        if not currentModels[model] or not model.Parent then
+-- ❌ Remove highlight cleanly
+local function removeHighlight(model)
+    local hl = RockHighlights[model]
+    if hl then
+        hl:Destroy()
+        RockHighlights[model] = nil
+    end
+end
+
+-- 🔁 Maintain live list efficiently
+local function trackIsland(island)
+    -- clear old connections
+    for model, hl in pairs(RockHighlights) do
+        if not model.Parent then
             hl:Destroy()
-            DrawnRocks[model] = nil
+            RockHighlights[model] = nil
+        end
+    end
+
+    for _, model in ipairs(island:GetChildren()) do
+        if model:IsA("Model") and model.Name:sub(1,1) == "{" then
+            if not RockHighlights[model] then
+                local rockType, rockParts = classifyRock(model)
+                if rockType then
+                    ROCK_TIERS[rockType].count += 1
+                    table.insert(ROCK_TIERS[rockType].rocks, {model=model, parts=rockParts})
+                    table.insert(MiningList, {model=model, tier=rockType, parts=rockParts})
+                    addHighlight(model, rockType)
+                end
+            end
         end
     end
 end
 
--- Refresh rocks & counts (only highlight once)
-local function refreshRocks()
-    local island = detectIsland()
-    if not island then return end
-
+-- 🧮 Recount rocks every second (no redraw)
+local function refreshCounts()
     for _, tier in pairs(ROCK_TIERS) do
         tier.count = 0
         tier.rocks = {}
     end
     MiningList = {}
 
-    local currentModels = {}
-
-    for _, model in ipairs(island:GetChildren()) do
-        if model:IsA("Model") and model.Name:sub(1,1) == "{" then
+    for model in pairs(RockHighlights) do
+        if model.Parent then
             local rockType, rockParts = classifyRock(model)
             if rockType then
                 ROCK_TIERS[rockType].count += 1
                 table.insert(ROCK_TIERS[rockType].rocks, {model=model, parts=rockParts})
                 table.insert(MiningList, {model=model, tier=rockType, parts=rockParts})
-                currentModels[model] = true
-                drawHighlight(model, rockType)
             end
+        else
+            removeHighlight(model)
         end
     end
+end
 
-    cleanupMissingRocks(currentModels)
-
-    -- sort mining list by best tier first
-    table.sort(MiningList, function(a, b)
-        local order = {"VolcanicBoulder", "PrismaticGem", "MineralGem", "MineralRock", "NormalRock"}
-        local ai, bi = table.find(order, a.tier) or 99, table.find(order, b.tier) or 99
-        return ai < bi
+-- 🪨 Sort MiningList: best first
+local function sortMiningList()
+    table.sort(MiningList, function(a,b)
+        local order = {"VolcanicBoulder","PrismaticGem","MineralGem","MineralRock","NormalRock"}
+        local idxA, idxB = table.find(order, a.tier) or 99, table.find(order, b.tier) or 99
+        return idxA < idxB
     end)
 end
 
--- Loop every second
+-- 🔂 Update loop
 task.spawn(function()
     while true do
         if loopActive then
-            refreshRocks()
+            local island = detectIsland()
+            if island then
+                trackIsland(island)
+                refreshCounts()
+                sortMiningList()
+            end
         end
         task.wait(1)
     end
 end)
 
--- Update char refs
+-- 🧍 Respawn handler
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     char = newChar
     hrp = newChar:WaitForChild("HumanoidRootPart")
     detectIsland()
 end)
 
--- Public API
+-- 🔹 Public API
 local RockModule = {}
 RockModule.Tiers = ROCK_TIERS
 RockModule.MiningList = MiningList
 RockModule.GetIslandName = function() return CurrentIsland.Value end
-RockModule.Refresh = refreshRocks
+RockModule.Refresh = refreshCounts
 RockModule.ToggleLoop = function(state)
     if state ~= nil then
         loopActive = state
