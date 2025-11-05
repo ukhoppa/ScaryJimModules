@@ -115,7 +115,7 @@ local function applyNoClip(active)
                 p.CanCollide = false
             else
                 if initial.CanCollide[p] ~= nil then
-                    p.CanCollide[p] = initial.CanCollide[p]
+                    p.CanCollide = initial.CanCollide[p] -- fixed this line ✅
                 else
                     p.CanCollide = true
                 end
