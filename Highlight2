@@ -1,0 +1,58 @@
+---------------------------------------------------------------------
+-- Refresh rocks (incremental with cleanup)
+---------------------------------------------------------------------
+local lastIsland
+local seenRocks = {}
+
+local function refreshRocks()
+    local island = detectIsland()
+    if not island then return end
+
+    -- Island changed: full reset
+    if island ~= lastIsland then
+        seenRocks = {}
+        for _, tier in pairs(ROCK_TIERS) do
+            tier.count = 0
+            tier.rocks = {}
+        end
+        lastIsland = island
+    end
+
+    -- Cleanup: remove cached rocks that no longer exist
+    for model, tierName in pairs(seenRocks) do
+        if not model:IsDescendantOf(island) then
+            seenRocks[model] = nil
+            -- Remove from tier list
+            local tier = ROCK_TIERS[tierName]
+            for i, r in ipairs(tier.rocks) do
+                if r == model then
+                    table.remove(tier.rocks, i)
+                    break
+                end
+            end
+            tier.count = math.max(0, #tier.rocks)
+        end
+    end
+
+    -- Only process new models
+    for _, model in ipairs(island:GetChildren()) do
+        if model:IsA("Model") and model.Name:sub(1,1) == "{" and not seenRocks[model] then
+            local rockType = classifyRock(model)
+            if rockType then
+                seenRocks[model] = rockType
+                local tier = ROCK_TIERS[rockType]
+                table.insert(tier.rocks, model)
+                tier.count = #tier.rocks
+                highlightRock(model, rockType)
+            end
+        end
+    end
+
+    -- Build ordered mining list
+    MiningList = {}
+    for _, tierName in ipairs(MINING_ORDER) do
+        for _, rock in ipairs(ROCK_TIERS[tierName].rocks) do
+            table.insert(MiningList, {model = rock, tier = tierName})
+        end
+    end
+end
