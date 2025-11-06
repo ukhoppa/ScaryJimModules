@@ -147,7 +147,7 @@ task.spawn(function()
 			if CurrentTarget and CurrentTarget.model and CurrentTarget.part then
 				local rock = CurrentTarget
 				faceAndTP(rock.part)
-				task.wait(0.4)
+				task.wait(1)
 
 				-- Verify target still exists
 				if rock.model and rock.model.Parent then
