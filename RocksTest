@@ -157,7 +157,7 @@ task.spawn(function()
                 local part = CurrentTarget.parts[1]
                 if part then
                     tpNear(part)
-                    task.wait(0.5)
+                    task.wait(1)
                     leftClickPart(part)
 
                     local elapsed = 0
