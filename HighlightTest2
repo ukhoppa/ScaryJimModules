@@ -1,12 +1,11 @@
+------------ Rocks.lua ------------
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local hrp = char:WaitForChild("HumanoidRootPart")
-local Camera = Workspace.CurrentCamera
 
 -- Island reference
 local CurrentIsland = Instance.new("StringValue")
@@ -14,18 +13,20 @@ CurrentIsland.Name = "CurrentIsland"
 CurrentIsland.Value = "Unknown"
 CurrentIsland.Parent = LocalPlayer
 
--- Loop toggles
+-- Loop toggle
 local loopActive = true
-local loopMining = false
 
 -- Rock tiers table
 local ROCK_TIERS = {
-    VolcanicBoulder = {count = 0, rocks = {}},
-    PrismaticGem = {count = 0, rocks = {}},
-    MineralGem = {count = 0, rocks = {}},
-    MineralRock = {count = 0, rocks = {}},
-    NormalRock = {count = 0, rocks = {}},
+    VolcanicBoulder = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(255,140,0)},
+    PrismaticGem    = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(95,189,175)},
+    MineralGem      = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(112,189,95)},
+    MineralRock     = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(213,115,61)},
+    NormalRock      = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(163,162,165)},
 }
+
+-- Master list in mining order: best first
+local MiningList = {}
 
 -- Utility: detect current island folder
 local function detectIsland()
@@ -48,20 +49,9 @@ local function detectIsland()
     return nil
 end
 
--- Utility: classify rocks
+-- Utility: classify rocks based on structure and color
 local function classifyRock(model)
     local parts = model:GetDescendants()
-
-    if model:FindFirstChild("Rock") then
-        return "VolcanicBoulder", {model.Rock}
-    end
-
-    for _, part in ipairs(parts) do
-        if part:IsA("BasePart") and tostring(part.Name):find("Rocks 2") then
-            return "NormalRock", {part}
-        end
-    end
-
     local primaryParts = {}
     local rocksPart
     for _, p in ipairs(parts) do
@@ -70,35 +60,37 @@ local function classifyRock(model)
                 table.insert(primaryParts, p)
             elseif p.Name == "Rocks" then
                 rocksPart = p
+            elseif p.Name == "Rock" then
+                return "VolcanicBoulder", {p}
+            elseif tostring(p.Name):find("Rocks 2") then
+                return "NormalRock", {p}
             end
         end
     end
 
     if #primaryParts == 5 and rocksPart then
         return "MineralRock", parts
-    end
-
-    if #primaryParts == 7 and rocksPart then
-        return "MineralGem", parts
-    end
-
-    if #primaryParts == 7 and rocksPart then
+    elseif #primaryParts == 7 and rocksPart then
+        -- TODO: could check PointLight for PrismaticGem vs MineralGem
+        -- For now, default to PrismaticGem
         return "PrismaticGem", parts
     end
 
     return nil, {}
 end
 
--- Refresh rocks
+
+-- Refresh rocks & counts
 local function refreshRocks()
     local island = detectIsland()
     if not island then return end
 
-    -- Reset counts
+    -- Reset
     for _, tier in pairs(ROCK_TIERS) do
         tier.count = 0
         tier.rocks = {}
     end
+    MiningList = {}
 
     for _, model in ipairs(island:GetChildren()) do
         if model:IsA("Model") and model.Name:sub(1,1) == "{" then
@@ -106,12 +98,24 @@ local function refreshRocks()
             if rockType then
                 ROCK_TIERS[rockType].count += 1
                 table.insert(ROCK_TIERS[rockType].rocks, {model=model, parts=rockParts})
+                table.insert(MiningList, {model=model, tier=rockType, parts=rockParts})                
             end
         end
     end
+
+    -- Sort MiningList: best first
+    table.sort(MiningList, function(a,b)
+        local order = {"VolcanicBoulder","PrismaticGem","MineralGem","MineralRock","NormalRock"}
+        local aIndex, bIndex = 0,0
+        for i,v in ipairs(order) do
+            if v == a.tier then aIndex=i end
+            if v == b.tier then bIndex=i end
+        end
+        return aIndex < bIndex
+    end)
 end
 
--- Continuous update loop
+-- Auto refresh loop
 task.spawn(function()
     while true do
         if loopActive then
@@ -128,64 +132,10 @@ LocalPlayer.CharacterAdded:Connect(function(newChar)
     detectIsland()
 end)
 
---// Mining Loop functions
-
--- Get target rock (first in highest-priority order)
-local function getTargetRock()
-    local priority = {"VolcanicBoulder","PrismaticGem","MineralGem","MineralRock","NormalRock"}
-    for _, tier in ipairs(priority) do
-        if ROCK_TIERS[tier] and #ROCK_TIERS[tier].rocks > 0 then
-            return ROCK_TIERS[tier].rocks[1].parts[1], tier
-        end
-    end
-    return nil, nil
-end
-
--- Teleport near rock
-local function tpNear(part)
-    if not part or not part.Parent then return end
-    local direction = (hrp.Position - part.Position)
-    if direction.Magnitude == 0 then direction = Vector3.new(0,3,-2) end
-    local offset = direction.Unit * 5
-    hrp.CFrame = CFrame.new(part.Position + offset, part.Position)
-    Camera.CameraType = Enum.CameraType.Custom
-    Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
-end
-
--- Left click rock
-local function leftClickPart(part)
-    if not part or not part.Parent then return end
-    local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-    if not onScreen then
-        tpNear(part)
-        screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-    end
-    if onScreen then
-        VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, true, game, 0)
-        task.wait(0.1)
-        VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 0)
-    end
-end
-
--- Mining loop
-task.spawn(function()
-    while true do
-        if loopMining then
-            local targetPart, tier = getTargetRock()
-            if targetPart and targetPart.Parent then
-                tpNear(targetPart)
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
-                task.wait(1) -- wait before clicking
-                leftClickPart(targetPart)
-            end
-        end
-        task.wait(0.5)
-    end
-end)
-
 -- Public API
 local RockModule = {}
 RockModule.Tiers = ROCK_TIERS
+RockModule.MiningList = MiningList
 RockModule.GetIslandName = function() return CurrentIsland.Value end
 RockModule.Refresh = refreshRocks
 RockModule.ToggleLoop = function(state)
@@ -195,14 +145,6 @@ RockModule.ToggleLoop = function(state)
         loopActive = not loopActive
     end
     return loopActive
-end
-RockModule.ToggleMining = function(state)
-    if state ~= nil then
-        loopMining = state
-    else
-        loopMining = not loopMining
-    end
-    return loopMining
 end
 
 return RockModule
