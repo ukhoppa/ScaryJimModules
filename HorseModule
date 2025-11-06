@@ -123,8 +123,17 @@ local function buildRayfieldData(): { [number]: table }
 			dist = math.floor((Character.HumanoidRootPart.Position - horse.HumanoidRootPart.Position).Magnitude)
 		end
 
+		local displayText = string.format(
+			"[ Breed: %s ] [ Dist: %s ] [ Colour: %s ] [ Mane: %s ] [ Tail: %s ]",
+			info.breed,
+			tostring(dist),
+			info.colour,
+			info.mane,
+			info.tail
+		)
+
 		table.insert(output, {
-			Name = string.format("%s [Dist: %s]", info.breed, tostring(dist)),
+			Name = displayText,
 			Color = isSpecialHorse(info)
 				and Color3.fromRGB(180, 90, 255) -- special
 				or Color3.fromRGB(100, 70, 40),  -- normal
@@ -152,7 +161,6 @@ function HorseModule.GetIslandName(): string
 	return currentIsland and currentIsland.Name or "Unknown"
 end
 
--- Provide a callback that receives a fresh button list every second
 function HorseModule.OnUpdate(callback: ({ [number]: table }) -> ())
 	refreshCallback = callback
 end
@@ -164,7 +172,7 @@ task.spawn(function()
 	while true do
 		if refreshCallback then
 			local horses = buildRayfieldData()
-			local hash = HttpService:JSONEncode(horses) -- cheap change detector
+			local hash = HttpService:JSONEncode(horses)
 			if hash ~= lastListHash then
 				lastListHash = hash
 				pcall(function() refreshCallback(horses) end)
