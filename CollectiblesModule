@@ -50,8 +50,7 @@ local function pressE()
 end
 
 -- Main loop
-task.spawn(function()
-    while true do
+RunService.Heartbeat:Connect(function()
         if HauntedModule.loopActive then
             local targets = getTargets()
             if #targets > 0 then
@@ -64,7 +63,7 @@ task.spawn(function()
             end
         end
         task.wait(0.1)
-    end
+    
 end)
 
 -- Public API
