@@ -24,163 +24,173 @@ local CurrentTarget = nil
 
 --// Tier toggles
 local TIER_ENABLED = {
-    VolcanicBoulder = true,
-    PrismaticGem = true,
-    MineralRock = true,
-    NormalRock = true
+	VolcanicBoulder = true,
+	PrismaticGem = true,
+	MineralRock = true,
+	NormalRock = true,
 }
 
 ------------------------------------------------------------
 -- Detect current island
 ------------------------------------------------------------
 local function detectIsland()
-    local islands = Workspace:FindFirstChild("Islands")
-    if not islands then
-        CurrentIsland.Value = "Unknown"
-        return nil
-    end
-    local parent = char and char.Parent
-    while parent and parent ~= Workspace do
-        if parent.Parent == islands then
-            CurrentIsland.Value = parent.Name
-            return parent
-        end
-        parent = parent.Parent
-    end
-    CurrentIsland.Value = "Unknown"
-    return nil
+	local islands = Workspace:FindFirstChild("Islands")
+	if not islands then
+		CurrentIsland.Value = "Unknown"
+		return nil
+	end
+
+	local parent = char and char.Parent
+	while parent and parent ~= Workspace do
+		if parent.Parent == islands then
+			CurrentIsland.Value = parent.Name
+			return parent
+		end
+		parent = parent.Parent
+	end
+
+	CurrentIsland.Value = "Unknown"
+	return nil
 end
 
 ------------------------------------------------------------
 -- Classify rock type
 ------------------------------------------------------------
 local function classifyRock(model)
-    local parts = model:GetDescendants()
-    local primaryCount, hasRocks = 0, false
+	local parts = model:GetDescendants()
+	local primaryCount, hasRocks = 0, false
 
-    for _, p in ipairs(parts) do
-        if p:IsA("BasePart") then
-            if p.Name == "Primary" then
-                primaryCount += 1
-            elseif p.Name == "Rocks" then
-                hasRocks = true
-            elseif p.Name == "Rock" then
-                return "VolcanicBoulder", p
-            elseif tostring(p.Name):find("Rocks 2") then
-                return "NormalRock", p
-            end
-        end
-    end
+	for _, p in ipairs(parts) do
+		if p:IsA("BasePart") then
+			if p.Name == "Primary" then
+				primaryCount += 1
+			elseif p.Name == "Rocks" then
+				hasRocks = true
+			elseif p.Name == "Rock" then
+				return "VolcanicBoulder", p
+			elseif tostring(p.Name):find("Rocks 2") then
+				return "NormalRock", p
+			end
+		end
+	end
 
-    if primaryCount == 5 and hasRocks then
-        return "MineralRock", model:FindFirstChildWhichIsA("BasePart")
-    elseif primaryCount == 7 and hasRocks then
-        return "PrismaticGem", model:FindFirstChildWhichIsA("BasePart")
-    end
+	if primaryCount == 5 and hasRocks then
+		return "MineralRock", model:FindFirstChildWhichIsA("BasePart")
+	elseif primaryCount == 7 and hasRocks then
+		return "PrismaticGem", model:FindFirstChildWhichIsA("BasePart")
+	end
 
-    return nil, nil
+	return nil, nil
 end
 
 ------------------------------------------------------------
 -- Scan island for best available rock
 ------------------------------------------------------------
 local function findNextRock()
-    local island = detectIsland()
-    if not island then return nil end
+	local island = detectIsland()
+	if not island then
+		return nil
+	end
 
-    local priority = {"VolcanicBoulder", "PrismaticGem", "MineralRock", "NormalRock"}
+	local priority = {"VolcanicBoulder", "PrismaticGem", "MineralRock", "NormalRock"}
 
-    for _, tier in ipairs(priority) do
-        if TIER_ENABLED[tier] then
-            for _, model in ipairs(island:GetChildren()) do
-                if model:IsA("Model") and model.Name:sub(1,1) == "{" then
-                    local rockType, part = classifyRock(model)
-                    if rockType == tier and part then
-                        return {model = model, part = part, tier = tier}
-                    end
-                end
-            end
-        end
-    end
+	for _, tier in ipairs(priority) do
+		if TIER_ENABLED[tier] then
+			for _, model in ipairs(island:GetChildren()) do
+				if model:IsA("Model") and model.Name:sub(1, 1) == "{" then
+					local rockType, part = classifyRock(model)
+					if rockType == tier and part then
+						return {model = model, part = part, tier = tier}
+					end
+				end
+			end
+		end
+	end
 
-    return nil
+	return nil
 end
 
 ------------------------------------------------------------
 -- Helpers
 ------------------------------------------------------------
 local function faceAndTP(part)
-    if not (hrp and part) then return end
-    local dir = (part.Position - hrp.Position).Unit
-    hrp.CFrame = CFrame.new(part.Position - dir * 5 + Vector3.new(0, 2, 0), part.Position)
-    Camera.CameraType = Enum.CameraType.Custom
-    Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
+	if not (hrp and part) then
+		return
+	end
+	local dir = (part.Position - hrp.Position).Unit
+	hrp.CFrame = CFrame.new(part.Position - dir * 5 + Vector3.new(0, 2, 0), part.Position)
+	Camera.CameraType = Enum.CameraType.Custom
+	Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 2, 0), part.Position)
 end
 
 local function clickPart(part)
-    local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-    if not onScreen then
-        faceAndTP(part)
-        task.wait(0.05)
-        screenPos = Camera:WorldToViewportPoint(part.Position)
-    end
-    VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, true, game, 0)
-    task.wait(0.05)
-    VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 0)
+	local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+	if not onScreen then
+		faceAndTP(part)
+		task.wait(0.05)
+		screenPos = Camera:WorldToViewportPoint(part.Position)
+	end
+	VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, true, game, 0)
+	task.wait(0.05)
+	VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 0)
 end
 
 ------------------------------------------------------------
 -- Main mining loop
 ------------------------------------------------------------
 task.spawn(function()
-    while true do
-        if miningActive then
-            CurrentTarget = findNextRock()
+	while true do
+		if miningActive then
+			CurrentTarget = findNextRock()
 
-            if CurrentTarget and CurrentTarget.model and CurrentTarget.part then
-                local rock = CurrentTarget
-                faceAndTP(rock.part)
-                task.wait(0.4)
+			if CurrentTarget and CurrentTarget.model and CurrentTarget.part then
+				local rock = CurrentTarget
+				faceAndTP(rock.part)
+				task.wait(0.4)
 
-                -- Verify target still exists
-                if rock.model and rock.model.Parent then
-                    clickPart(rock.part)
+				-- Verify target still exists
+				if rock.model and rock.model.Parent then
+					clickPart(rock.part)
 
-                    -- Wait for rock to disappear or timeout
-                    local t = 0
-                    while rock.model and rock.model.Parent and miningActive do
-                        task.wait(0.25)
-                        t += 0.25
-                        if t >= 30 then break end
-                    end
-                end
-            else
-                -- No rock found — wait a bit before rescanning
-                task.wait(1.5)
-            end
+					-- Wait until rock disappears or timeout
+					local t = 0
+					while rock.model and rock.model.Parent and miningActive do
+						task.wait(0.25)
+						t += 0.25
+						if t >= 30 then
+							break
+						end
+					end
+				end
+			else
+				-- No valid rock found — wait a bit
+				task.wait(1.5)
+			end
 
-            -- Always rescan after each rock or timeout
-            CurrentTarget = nil
-        else
-            -- Reset state when mining stops
-            CurrentTarget = nil
-            Camera.CameraType = Enum.CameraType.Custom
-            task.wait(0.5)
-        end
-    end
+			-- Always rescan after each rock or timeout
+			CurrentTarget = nil
+		else
+			-- Reset state when mining stops
+			CurrentTarget = nil
+			Camera.CameraType = Enum.CameraType.Custom
+			task.wait(0.5)
+		end
+	end
 end)
 
 ------------------------------------------------------------
 -- Cleanup utilities
 ------------------------------------------------------------
 local function deleteFolderInIsland(folderName)
-    local island = detectIsland()
-    if not island then return end
-    for _, desc in ipairs(island:GetDescendants()) do
-        if desc:IsA("Folder") and desc.Name == folderName then
-            desc:Destroy()
-        end
-    end
+	local island = detectIsland()
+	if not island then
+		return
+	end
+	for _, desc in ipairs(island:GetDescendants()) do
+		if desc:IsA("Folder") and desc.Name == folderName then
+			desc:Destroy()
+		end
+	end
 end
 
 ------------------------------------------------------------
@@ -189,30 +199,30 @@ end
 local RockModule = {}
 
 function RockModule.ToggleMining(state)
-    miningActive = (state ~= nil) and state or not miningActive
-    if not miningActive then
-        CurrentTarget = nil
-        Camera.CameraType = Enum.CameraType.Custom
-    end
-    return miningActive
+	miningActive = (state ~= nil) and state or not miningActive
+	if not miningActive then
+		CurrentTarget = nil
+		Camera.CameraType = Enum.CameraType.Custom
+	end
+	return miningActive
 end
 
 function RockModule.ToggleTier(tier, state)
-    if TIER_ENABLED[tier] ~= nil then
-        TIER_ENABLED[tier] = state
-    end
+	if TIER_ENABLED[tier] ~= nil then
+		TIER_ENABLED[tier] = state
+	end
 end
 
 function RockModule.GetIslandName()
-    return CurrentIsland.Value
+	return CurrentIsland.Value
 end
 
-RockModule.DeleteLava = function()
-    deleteFolderInIsland("LavaParts")
+function RockModule.DeleteLava()
+	deleteFolderInIsland("LavaParts")
 end
 
-RockModule.DeleteTrees = function()
-    deleteFolderInIsland("Trees")
+function RockModule.DeleteTrees()
+	deleteFolderInIsland("Trees")
 end
 
 return RockModule
