@@ -1,4 +1,4 @@
---// HorseModule.lua – Auto Island Wild Horse Scanner (Auto-Refresh)
+--// HorseModule.lua – Auto Island Wild Horse Scanner (Rayfield Ready)
 --!strict
 
 ------------------------------------------------------------
@@ -49,7 +49,7 @@ local function isSpecialHorse(info): boolean
 	end
 	return containsKeyword(info.breed)
 		or containsKeyword(info.colour)
-		or (info.instance and containsKeyword(info.instance.Name))
+		or containsKeyword(info.instance.Name)
 end
 
 ------------------------------------------------------------
@@ -58,19 +58,22 @@ end
 local function getWildHorses(island: Instance?): { [number]: table }
 	if not island then return {} end
 	local horses = {}
+	local seen = {} -- prevent duplicates by model reference
 
 	for _, horse in ipairs(island:GetChildren()) do
 		if horse:IsA("Model")
 			and horse.Name:sub(1,1) == "{"
 			and horse:FindFirstChild("Humanoid")
 			and horse:FindFirstChild("HumanoidRootPart")
-			and horse:FindFirstChild("OverheadPart") then
+			and horse:FindFirstChild("OverheadPart")
+			and not seen[horse] then
 
 			local overhead = horse.OverheadPart:FindFirstChild("Overhead")
 			if overhead
 				and overhead:FindFirstChild("NameLabel")
 				and overhead.NameLabel.Text == "Wild" then
 
+				seen[horse] = true
 				local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
 				local dataAttr = horse:GetAttribute("data")
 				local parsedData = {}
@@ -98,7 +101,7 @@ local function getWildHorses(island: Instance?): { [number]: table }
 		local aSpecial = isSpecialHorse(a)
 		local bSpecial = isSpecialHorse(b)
 		if aSpecial ~= bSpecial then
-			return aSpecial -- special ones first
+			return aSpecial -- special first
 		end
 		return (a.breed or "") < (b.breed or "")
 	end)
@@ -123,11 +126,21 @@ local function buildRayfieldData(): { [number]: table }
 			dist = math.floor((Character.HumanoidRootPart.Position - horse.HumanoidRootPart.Position).Magnitude)
 		end
 
+		local special = isSpecialHorse(info)
+		local color = special and Color3.fromRGB(180, 90, 255) or Color3.fromRGB(100, 70, 40)
+
+		local display = string.format(
+			"<b>🐎 %s</b> [Dist: %s]\n🎨 <b>Colour:</b> %s | 🪶 <b>Mane:</b> %s | 🪶 <b>Tail:</b> %s",
+			info.breed,
+			tostring(dist),
+			info.colour,
+			info.mane,
+			info.tail
+		)
+
 		table.insert(output, {
-			Name = string.format("%s [Dist: %s]", info.breed, tostring(dist)),
-			Color = isSpecialHorse(info)
-				and Color3.fromRGB(180, 90, 255) -- special
-				or Color3.fromRGB(100, 70, 40),  -- normal
+			Display = display,
+			Color = color,
 			Callback = function()
 				if Character and Character:FindFirstChild("HumanoidRootPart")
 					and horse:FindFirstChild("HumanoidRootPart") then
@@ -152,22 +165,24 @@ function HorseModule.GetIslandName(): string
 	return currentIsland and currentIsland.Name or "Unknown"
 end
 
--- Provide a callback that receives a fresh button list every second
+-- Callback gets a fresh list every 1 sec (deduped)
 function HorseModule.OnUpdate(callback: ({ [number]: table }) -> ())
 	refreshCallback = callback
 end
 
 ------------------------------------------------------------
---// Auto-refresh loop (every 1 second)
+--// Auto-refresh loop (1 sec)
 ------------------------------------------------------------
 task.spawn(function()
 	while true do
 		if refreshCallback then
 			local horses = buildRayfieldData()
-			local hash = HttpService:JSONEncode(horses) -- cheap change detector
+			local hash = HttpService:JSONEncode(horses)
 			if hash ~= lastListHash then
 				lastListHash = hash
-				pcall(function() refreshCallback(horses) end)
+				pcall(function()
+					refreshCallback(horses)
+				end)
 			end
 		end
 		task.wait(1)
