@@ -1,70 +1,61 @@
------------- Rocks.lua ------------
+--// Services
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local Camera = Workspace.CurrentCamera
 
+--// Player references
 local LocalPlayer = Players.LocalPlayer
 local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local hrp = char:WaitForChild("HumanoidRootPart")
 
--- Island reference
+--// Island reference
 local CurrentIsland = Instance.new("StringValue")
 CurrentIsland.Name = "CurrentIsland"
 CurrentIsland.Value = "Unknown"
 CurrentIsland.Parent = LocalPlayer
 
--- Loop toggle
+--// Loop toggles
 local loopActive = true
+local miningActive = false
 
--- Rock tiers table
+--// Rock tiers
 local ROCK_TIERS = {
-    VolcanicBoulder = {count = 0, rocks = {}},
-    PrismaticGem = {count = 0, rocks = {}},
-    MineralGem = {count = 0, rocks = {}},
-    MineralRock = {count = 0, rocks = {}},
-    NormalRock = {count = 0, rocks = {}},
+    VolcanicBoulder = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(255,140,0)},
+    PrismaticGem    = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(95,189,175)},
+    MineralGem      = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(112,189,95)},
+    MineralRock     = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(213,115,61)},
+    NormalRock      = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(163,162,165)},
 }
 
--- Utility: detect current island folder
+local MiningList = {}
+
+--// Current mining target
+local CurrentTarget = nil
+
+--// Utility: detect island
 local function detectIsland()
     local islandsFolder = Workspace:FindFirstChild("Islands")
     if not islandsFolder then
         CurrentIsland.Value = "Unknown"
         return nil
     end
-
     local currentParent = char and char.Parent
-    while currentParent and currentParent ~= islandsFolder and currentParent ~= workspace do
+    while currentParent and currentParent ~= islandsFolder and currentParent ~= Workspace do
         if currentParent.Parent == islandsFolder then
             CurrentIsland.Value = currentParent.Name
             return currentParent
         end
         currentParent = currentParent.Parent
     end
-
     CurrentIsland.Value = "Unknown"
     return nil
 end
 
--- Utility: classify rocks based on structure and color
+--// Classify rocks
 local function classifyRock(model)
-    -- Check for parts
     local parts = model:GetDescendants()
-    local countParts = #parts
-
-    -- Volcanic Boulders: 1 part named "Rock"
-    if model:FindFirstChild("Rock") then
-        return "VolcanicBoulder", {model.Rock}
-    end
-
-    -- Normal Rock: 1 part containing "Rocks 2"
-    for _, part in ipairs(parts) do
-        if part:IsA("BasePart") and tostring(part.Name):find("Rocks 2") then
-            return "NormalRock", {part}
-        end
-    end
-
-    -- Mineral Rocks: 6 parts (5 Primary + 1 Rocks)
     local primaryParts = {}
     local rocksPart
     for _, p in ipairs(parts) do
@@ -73,37 +64,32 @@ local function classifyRock(model)
                 table.insert(primaryParts, p)
             elseif p.Name == "Rocks" then
                 rocksPart = p
+            elseif p.Name == "Rock" then
+                return "VolcanicBoulder", {p}
+            elseif tostring(p.Name):find("Rocks 2") then
+                return "NormalRock", {p}
             end
         end
     end
+
     if #primaryParts == 5 and rocksPart then
         return "MineralRock", parts
-    end
-
-    -- Mineral Gems: 7 Primary + 1 Rocks
-    if #primaryParts == 7 and rocksPart then
-        return "MineralGem", parts
-    end
-
-    -- Prismatic Gems: same as Mineral Gems but with PointLight color check
-    -- Can add a PointLight color filter later
-    if #primaryParts == 7 and rocksPart then
+    elseif #primaryParts == 7 and rocksPart then
         return "PrismaticGem", parts
     end
-
     return nil, {}
 end
 
--- Refresh rocks
+--// Refresh rock list
 local function refreshRocks()
     local island = detectIsland()
     if not island then return end
 
-    -- Reset counts
     for _, tier in pairs(ROCK_TIERS) do
         tier.count = 0
         tier.rocks = {}
     end
+    table.clear(MiningList)
 
     for _, model in ipairs(island:GetChildren()) do
         if model:IsA("Model") and model.Name:sub(1,1) == "{" then
@@ -111,33 +97,141 @@ local function refreshRocks()
             if rockType then
                 ROCK_TIERS[rockType].count += 1
                 table.insert(ROCK_TIERS[rockType].rocks, {model=model, parts=rockParts})
+                table.insert(MiningList, {model=model, tier=rockType, parts=rockParts})
             end
         end
     end
+
+    table.sort(MiningList, function(a,b)
+        local order = {"VolcanicBoulder","PrismaticGem","MineralGem","MineralRock","NormalRock"}
+        local aIndex, bIndex = 0,0
+        for i,v in ipairs(order) do
+            if v == a.tier then aIndex=i end
+            if v == b.tier then bIndex=i end
+        end
+        return aIndex < bIndex
+    end)
 end
 
--- Continuous update loop
+--// Helper: teleport near rock
+local function tpNear(part)
+    if not miningActive or not part then return end
+    local direction = (hrp.Position - part.Position)
+    if direction.Magnitude == 0 then
+        direction = Vector3.new(0,3,-2)
+    end
+    local offset = direction.Unit * 5
+    hrp.CFrame = CFrame.new(part.Position + offset, part.Position)
+    Camera.CameraType = Enum.CameraType.Custom
+    Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
+end
+
+--// Helper: simulate left click
+local function leftClickPart(part)
+    if not miningActive or not part or not part.Parent then return end
+    local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+    if not onScreen then
+        hrp.CFrame = CFrame.new(hrp.Position, part.Position)
+        Camera.CameraType = Enum.CameraType.Custom
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
+        task.wait(0.05)
+    end
+    screenPos = Camera:WorldToViewportPoint(part.Position)
+    VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, true, game, 0)
+    task.wait(0.1)
+    VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 0)
+end
+
+--// Mining loop
 task.spawn(function()
     while true do
-        if loopActive then
+        if miningActive then
+            -- Ensure we have a valid target
+            if not CurrentTarget or not (CurrentTarget.model and CurrentTarget.model.Parent) then
+                refreshRocks()
+                CurrentTarget = MiningList[1]
+            end
+
+            if CurrentTarget and CurrentTarget.model and CurrentTarget.model.Parent then
+                local part = CurrentTarget.parts[1]
+                if part then
+                    tpNear(part)
+                    task.wait(0.5)
+                    leftClickPart(part)
+
+                    local elapsed = 0
+                    while CurrentTarget.model and CurrentTarget.model.Parent and miningActive do
+                        task.wait(0.2)
+                        elapsed += 0.2
+                        if elapsed >= 150 then
+                            CurrentTarget = nil
+                            refreshRocks()
+                            break
+                        end
+                    end
+                    -- Reset target after finishing
+                    CurrentTarget = nil
+                    refreshRocks()
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+--// Safety loop: continuously validate target
+task.spawn(function()
+    while true do
+        if miningActive and CurrentTarget then
+            local valid = CurrentTarget.model and CurrentTarget.model.Parent
+            if valid then
+                local stillHasPart = false
+                for _, p in ipairs(CurrentTarget.parts or {}) do
+                    if p and p.Parent then
+                        stillHasPart = true
+                        break
+                    end
+                end
+                valid = stillHasPart
+            end
+
+            if not valid then
+                print("[Rocks] Target rock gone - selecting next available rock.")
+                CurrentTarget = MiningList[1]
+                if not CurrentTarget then
+                    refreshRocks()
+                    CurrentTarget = MiningList[1]
+                end
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+--// Auto refresh loop (separate from mining)
+task.spawn(function()
+    while true do
+        if loopActive and not miningActive then
             refreshRocks()
         end
         task.wait(1)
     end
 end)
 
--- Update character references on respawn
+--// Character respawn handling
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     char = newChar
     hrp = newChar:WaitForChild("HumanoidRootPart")
     detectIsland()
 end)
 
--- Public API
+--// Public API
 local RockModule = {}
 RockModule.Tiers = ROCK_TIERS
+RockModule.MiningList = MiningList
 RockModule.GetIslandName = function() return CurrentIsland.Value end
 RockModule.Refresh = refreshRocks
+
 RockModule.ToggleLoop = function(state)
     if state ~= nil then
         loopActive = state
@@ -145,6 +239,15 @@ RockModule.ToggleLoop = function(state)
         loopActive = not loopActive
     end
     return loopActive
+end
+
+RockModule.ToggleMining = function(state)
+    if state ~= nil then
+        miningActive = state
+    else
+        miningActive = not miningActive
+    end
+    return miningActive
 end
 
 return RockModule
