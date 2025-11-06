@@ -1,3 +1,5 @@
+--// RockModule.lua – Final Stable Version (Rescan Mode)
+
 --// Services
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -20,7 +22,7 @@ CurrentIsland.Parent = LocalPlayer
 local miningActive = false
 local CurrentTarget = nil
 
---// Rock tier toggles
+--// Tier toggles
 local TIER_ENABLED = {
     VolcanicBoulder = true,
     PrismaticGem = true,
@@ -50,12 +52,11 @@ local function detectIsland()
 end
 
 ------------------------------------------------------------
--- Rock classification
+-- Classify rock type
 ------------------------------------------------------------
 local function classifyRock(model)
     local parts = model:GetDescendants()
-    local primaryCount = 0
-    local hasRocks = false
+    local primaryCount, hasRocks = 0, false
 
     for _, p in ipairs(parts) do
         if p:IsA("BasePart") then
@@ -81,7 +82,7 @@ local function classifyRock(model)
 end
 
 ------------------------------------------------------------
--- Find the best available rock
+-- Scan island for best available rock
 ------------------------------------------------------------
 local function findNextRock()
     local island = detectIsland()
@@ -89,24 +90,29 @@ local function findNextRock()
 
     local priority = {"VolcanicBoulder", "PrismaticGem", "MineralRock", "NormalRock"}
 
-    for _, model in ipairs(island:GetChildren()) do
-        if model:IsA("Model") and model.Name:sub(1,1) == "{" then
-            local rockType, part = classifyRock(model)
-            if rockType and part and TIER_ENABLED[rockType] then
-                return {model = model, part = part, tier = rockType}
+    for _, tier in ipairs(priority) do
+        if TIER_ENABLED[tier] then
+            for _, model in ipairs(island:GetChildren()) do
+                if model:IsA("Model") and model.Name:sub(1,1) == "{" then
+                    local rockType, part = classifyRock(model)
+                    if rockType == tier and part then
+                        return {model = model, part = part, tier = tier}
+                    end
+                end
             end
         end
     end
+
     return nil
 end
 
 ------------------------------------------------------------
--- Movement helpers
+-- Helpers
 ------------------------------------------------------------
 local function faceAndTP(part)
     if not (hrp and part) then return end
-    local offset = (part.Position - hrp.Position).Unit * -5
-    hrp.CFrame = CFrame.new(part.Position + offset + Vector3.new(0,2,0), part.Position)
+    local dir = (part.Position - hrp.Position).Unit
+    hrp.CFrame = CFrame.new(part.Position - dir * 5 + Vector3.new(0, 2, 0), part.Position)
     Camera.CameraType = Enum.CameraType.Custom
     Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
 end
@@ -129,44 +135,43 @@ end
 task.spawn(function()
     while true do
         if miningActive then
-            if not CurrentTarget or not (CurrentTarget.model and CurrentTarget.model.Parent) then
-                CurrentTarget = findNextRock()
-            end
+            CurrentTarget = findNextRock()
 
             if CurrentTarget and CurrentTarget.model and CurrentTarget.part then
                 local rock = CurrentTarget
                 faceAndTP(rock.part)
-                task.wait(0.3)
+                task.wait(0.4)
 
-                -- Verify before mining
+                -- Verify target still exists
                 if rock.model and rock.model.Parent then
                     clickPart(rock.part)
 
-                    -- Wait until gone or timeout
-                    local timeout = 0
+                    -- Wait for rock to disappear or timeout
+                    local t = 0
                     while rock.model and rock.model.Parent and miningActive do
-                        task.wait(0.2)
-                        timeout += 0.2
-                        if timeout >= 160 then
-                            break
-                        end
+                        task.wait(0.25)
+                        t += 0.25
+                        if t >= 30 then break end
                     end
                 end
-
-                CurrentTarget = nil
             else
-                task.wait(1)
+                -- No rock found — wait a bit before rescanning
+                task.wait(1.5)
             end
-        else
-            CurrentTarget = nil
-        end
 
-        task.wait(0.5)
+            -- Always rescan after each rock or timeout
+            CurrentTarget = nil
+        else
+            -- Reset state when mining stops
+            CurrentTarget = nil
+            Camera.CameraType = Enum.CameraType.Custom
+            task.wait(0.5)
+        end
     end
 end)
 
 ------------------------------------------------------------
--- Island cleanup utilities
+-- Cleanup utilities
 ------------------------------------------------------------
 local function deleteFolderInIsland(folderName)
     local island = detectIsland()
@@ -184,7 +189,7 @@ end
 local RockModule = {}
 
 function RockModule.ToggleMining(state)
-    miningActive = state or not miningActive
+    miningActive = (state ~= nil) and state or not miningActive
     if not miningActive then
         CurrentTarget = nil
         Camera.CameraType = Enum.CameraType.Custom
