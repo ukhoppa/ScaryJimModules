@@ -118,19 +118,7 @@ end
 local function tpNear(part)
     if not miningActive or not part then return end
 
---TestCollisionChange
-
-   local part = rock.parts[1]
-    if not part then return end
-
-    -- Set CollisionGroupId if it's a volcanic boulder
-    if rock.tier == "VolcanicBoulder" and part:IsA("BasePart") then
-        pcall(function()
-            part.CollisionGroupId = 1
-        end)
-    end
-
---end of test 
+    part.CollisionGroupId = 1
     local direction = (hrp.Position - part.Position)
     if direction.Magnitude == 0 then
         direction = Vector3.new(0,3,-2)
