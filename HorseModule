@@ -1,192 +1,266 @@
---// HorseModule.lua – Auto Island Wild Horse Scanner (Rayfield Ready)
 --!strict
+-- HorseModule.lua
 
-------------------------------------------------------------
 --// Services
-------------------------------------------------------------
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 
-------------------------------------------------------------
 --// Player references
-------------------------------------------------------------
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local connections = {}
 
-------------------------------------------------------------
 --// State
-------------------------------------------------------------
-local HorseModule = {}
-local currentIsland: Instance? = nil
-local refreshCallback: (({ [number]: table }) -> ())? = nil
-local lastListHash = ""
+local CurrentIsland = nil
+local GUI: ScreenGui
+local HorseFrame: ScrollingFrame
+local HorseLayout: UIListLayout
 
-------------------------------------------------------------
---// Detect current island
-------------------------------------------------------------
-local function detectIsland(): Instance?
-	if not Character or not Workspace:FindFirstChild("Islands") then return nil end
-	local islands = Workspace:FindFirstChild("Islands")
-	local parent = Character.Parent
-	while parent and parent ~= Workspace do
-		if parent.Parent == islands then
-			return parent
+--// Helper: safe connection
+local function safeConnect(signal, func)
+	local conn = signal:Connect(func)
+	table.insert(connections, conn)
+	return conn
+end
+
+--// Detect island (mimic RockModule)
+local function detectIsland()
+	local islandsFolder = Workspace:FindFirstChild("Islands")
+	if not islandsFolder then return nil end
+	local currentParent = Character and Character.Parent
+	while currentParent and currentParent ~= Workspace do
+		if currentParent.Parent == islandsFolder then
+			return currentParent
 		end
-		parent = parent.Parent
+		currentParent = currentParent.Parent
 	end
 	return nil
 end
 
-------------------------------------------------------------
---// Helper: classify if horse is special
-------------------------------------------------------------
-local function isSpecialHorse(info): boolean
-	local function containsKeyword(s: string)
-		local lowered = s:lower()
-		return lowered:find("ghost") or lowered:find("neon") or lowered:find("mummy")
-	end
-	return containsKeyword(info.breed)
-		or containsKeyword(info.colour)
-		or containsKeyword(info.instance.Name)
-end
-
-------------------------------------------------------------
---// Get all wild horses on island
-------------------------------------------------------------
-local function getWildHorses(island: Instance?): { [number]: table }
+--// Get all wild horses in current island
+local function getWildHorses()
+	local island = detectIsland()
+	CurrentIsland = island
 	if not island then return {} end
-	local horses = {}
-	local seen = {} -- prevent duplicates by model reference
+
+	local horseSet = {}
+	local wildHorses = {}
 
 	for _, horse in ipairs(island:GetChildren()) do
 		if horse:IsA("Model")
 			and horse.Name:sub(1,1) == "{"
 			and horse:FindFirstChild("Humanoid")
 			and horse:FindFirstChild("HumanoidRootPart")
-			and horse:FindFirstChild("OverheadPart")
-			and not seen[horse] then
+			and horse:FindFirstChild("OverheadPart") then
 
 			local overhead = horse.OverheadPart:FindFirstChild("Overhead")
-			if overhead
+			if overhead 
 				and overhead:FindFirstChild("NameLabel")
 				and overhead.NameLabel.Text == "Wild" then
 
-				seen[horse] = true
 				local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
 				local dataAttr = horse:GetAttribute("data")
 				local parsedData = {}
+
 				if dataAttr then
-					pcall(function() parsedData = HttpService:JSONDecode(dataAttr) end)
+					pcall(function()
+						parsedData = HttpService:JSONDecode(dataAttr)
+					end)
 				end
+
 				local variants = parsedData.variants or {}
 				local colour = variants.colour or "?"
 				local mane = variants.maneColour or "?"
 				local tail = variants.tailColour or "?"
 
-				table.insert(horses, {
-					instance = horse,
-					breed = breed,
-					colour = colour,
-					mane = mane,
-					tail = tail,
-				})
+				-- Avoid duplicates
+				if not horseSet[horse] then
+					horseSet[horse] = true
+					table.insert(wildHorses, {
+						instance = horse,
+						breed = breed,
+						colour = colour,
+						mane = mane,
+						tail = tail,
+					})
+				end
 			end
 		end
 	end
 
-	-- Sort by special → breed name
-	table.sort(horses, function(a, b)
-		local aSpecial = isSpecialHorse(a)
-		local bSpecial = isSpecialHorse(b)
-		if aSpecial ~= bSpecial then
-			return aSpecial -- special first
+	-- Sort: special horses first (ghost/neon/mummy anywhere in name, breed, colour)
+	table.sort(wildHorses, function(a,b)
+		local function isSpecial(info)
+			local lowerFields = {
+				tostring(info.instance.Name):lower(),
+				tostring(info.breed):lower(),
+				tostring(info.colour):lower(),
+				tostring(info.mane):lower(),
+				tostring(info.tail):lower(),
+			}
+			for _, str in ipairs(lowerFields) do
+				if str:find("ghost") or str:find("neon") or str:find("mummy") then
+					return true
+				end
+			end
+			return false
 		end
-		return (a.breed or "") < (b.breed or "")
+		if isSpecial(a) and not isSpecial(b) then
+			return true
+		elseif not isSpecial(a) and isSpecial(b) then
+			return false
+		end
+		return false -- keep original order otherwise
 	end)
 
-	return horses
+	return wildHorses
 end
 
-------------------------------------------------------------
---// Build Rayfield button data
-------------------------------------------------------------
-local function buildRayfieldData(): { [number]: table }
-	currentIsland = detectIsland()
-	if not currentIsland then return {} end
+--// Create GUI
+local function createGUI()
+	-- Destroy old GUI
+	local oldGui = PlayerGui:FindFirstChild("NonWildHorseListGUI")
+	if oldGui then oldGui:Destroy() end
 
-	local horses = getWildHorses(currentIsland)
-	local output = {}
+	GUI = Instance.new("ScreenGui")
+	GUI.Name = "NonWildHorseListGUI"
+	GUI.Parent = PlayerGui
+	GUI.ResetOnSpawn = false
+
+	local Frame = Instance.new("Frame")
+	Frame.Size = UDim2.new(0, 600, 0, 480)
+	Frame.Position = UDim2.new(0.5, -300, 0.5, -240)
+	Frame.AnchorPoint = Vector2.new(0.5, 0.5)
+	Frame.BackgroundColor3 = Color3.fromRGB(54, 57, 63)
+	Frame.BorderSizePixel = 0
+	Frame.Parent = GUI
+
+	HorseFrame = Instance.new("ScrollingFrame")
+	HorseFrame.Size = UDim2.new(1, -10, 1, -10)
+	HorseFrame.Position = UDim2.new(0, 5, 0, 5)
+	HorseFrame.BackgroundTransparency = 1
+	HorseFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+	HorseFrame.ScrollBarThickness = 6
+	HorseFrame.Parent = Frame
+
+	HorseLayout = Instance.new("UIListLayout")
+	HorseLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	HorseLayout.Padding = UDim.new(0, 4)
+	HorseLayout.Parent = HorseFrame
+
+	-- Draggable
+	local dragInput, mousePos, framePos
+	Frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragInput = input
+			mousePos = UIS:GetMouseLocation()
+			framePos = Frame.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragInput = nil
+				end
+			end)
+		end
+	end)
+	RunService.Heartbeat:Connect(function()
+		if dragInput then
+			local delta = UIS:GetMouseLocation() - mousePos
+			Frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+		end
+	end)
+end
+
+--// Refresh horse list
+local function refreshHorseList()
+	for _, child in ipairs(HorseFrame:GetChildren()) do
+		if child:IsA("TextButton") then
+			child:Destroy()
+		end
+	end
+
+	local horses = getWildHorses()
+	if not horses then return end
 
 	for _, info in ipairs(horses) do
 		local horse = info.instance
-		local dist = "?"
-		if Character:FindFirstChild("HumanoidRootPart") and horse:FindFirstChild("HumanoidRootPart") then
-			dist = math.floor((Character.HumanoidRootPart.Position - horse.HumanoidRootPart.Position).Magnitude)
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, -10, 0, 60)
+
+		-- Special color for ghost/neon/mummy
+		local lowerFields = {
+			tostring(horse.Name):lower(),
+			tostring(info.breed):lower(),
+			tostring(info.colour):lower(),
+			tostring(info.mane):lower(),
+			tostring(info.tail):lower(),
+		}
+		local special = false
+		for _, str in ipairs(lowerFields) do
+			if str:find("ghost") or str:find("neon") or str:find("mummy") then
+				special = true
+				break
+			end
 		end
+		btn.BackgroundColor3 = special and Color3.fromRGB(100, 50, 100) or Color3.fromRGB(100, 70, 40)
 
-		local special = isSpecialHorse(info)
-		local color = special and Color3.fromRGB(180, 90, 255) or Color3.fromRGB(100, 70, 40)
+		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		btn.TextWrapped = true
+		btn.TextScaled = false
+		btn.TextXAlignment = Enum.TextXAlignment.Left
+		btn.RichText = true
+		btn.Font = Enum.Font.SourceSansBold
+		btn.TextSize = 14
 
-		local display = string.format(
-			"<b>🐎 %s</b> [Dist: %s]\n🎨 <b>Colour:</b> %s | 🪶 <b>Mane:</b> %s | 🪶 <b>Tail:</b> %s",
+		local distance = (Character:FindFirstChild("HumanoidRootPart") and horse:FindFirstChild("HumanoidRootPart"))
+			and math.floor((Character.HumanoidRootPart.Position - horse.HumanoidRootPart.Position).Magnitude)
+			or "?"
+
+		btn.Text = string.format(
+			"<b>🐎 %s</b> [Dist: %s]\n🎨 Colour: %s  🪶 Mane: %s  🪶 Tail: %s",
 			info.breed,
-			tostring(dist),
+			tostring(distance),
 			info.colour,
 			info.mane,
 			info.tail
 		)
 
-		table.insert(output, {
-			Display = display,
-			Color = color,
-			Callback = function()
-				if Character and Character:FindFirstChild("HumanoidRootPart")
-					and horse:FindFirstChild("HumanoidRootPart") then
-					Character:PivotTo(CFrame.new(horse.HumanoidRootPart.Position + Vector3.new(0, 3, 0)))
-				end
-			end,
-		})
+		btn.Parent = HorseFrame
+
+		safeConnect(btn.MouseButton1Click, function()
+			if Character and Character:FindFirstChild("HumanoidRootPart") and horse:FindFirstChild("HumanoidRootPart") then
+				Character:PivotTo(CFrame.new(horse.HumanoidRootPart.Position + Vector3.new(0, 3, 0)))
+			end
+		end)
 	end
 
-	return output
+	task.defer(function()
+		HorseFrame.CanvasSize = UDim2.new(0, 0, 0, HorseLayout.AbsoluteContentSize.Y + 10)
+	end)
 end
 
-------------------------------------------------------------
---// Public API
-------------------------------------------------------------
-function HorseModule.ScanHorses(): { [number]: table }
-	return buildRayfieldData()
-end
-
-function HorseModule.GetIslandName(): string
-	currentIsland = detectIsland()
-	return currentIsland and currentIsland.Name or "Unknown"
-end
-
--- Callback gets a fresh list every 1 sec (deduped)
-function HorseModule.OnUpdate(callback: ({ [number]: table }) -> ())
-	refreshCallback = callback
-end
-
-------------------------------------------------------------
---// Auto-refresh loop (1 sec)
-------------------------------------------------------------
+--// Auto refresh every second
 task.spawn(function()
 	while true do
-		if refreshCallback then
-			local horses = buildRayfieldData()
-			local hash = HttpService:JSONEncode(horses)
-			if hash ~= lastListHash then
-				lastListHash = hash
-				pcall(function()
-					refreshCallback(horses)
-				end)
-			end
-		end
+		refreshHorseList()
 		task.wait(1)
 	end
 end)
+
+--// Character respawn refresh
+safeConnect(Player.CharacterAdded, function(newChar)
+	Character = newChar
+	task.wait(1)
+	refreshHorseList()
+end)
+
+--// Module
+local HorseModule = {}
+HorseModule.Refresh = refreshHorseList
+HorseModule.DetectIsland = detectIsland
+HorseModule.CreateGUI = createGUI
 
 return HorseModule
