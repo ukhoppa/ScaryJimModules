@@ -1,8 +1,8 @@
---// HorseModule.lua – Auto Island Wild Horse Scanner (Auto-Refresh)
+--// HorseModule.lua – Auto Island Wild Horse Scanner
 --!strict
 
 ------------------------------------------------------------
---// Services
+-- Services
 ------------------------------------------------------------
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -10,21 +10,21 @@ local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 
 ------------------------------------------------------------
---// Player references
+-- Player references
 ------------------------------------------------------------
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 
 ------------------------------------------------------------
---// State
+-- Module state
 ------------------------------------------------------------
 local HorseModule = {}
 local currentIsland: Instance? = nil
 local refreshCallback: (({ [number]: table }) -> ())? = nil
-local lastListHash = ""
+local lastHash = ""
 
 ------------------------------------------------------------
---// Detect current island
+-- Detect current island automatically
 ------------------------------------------------------------
 local function detectIsland(): Instance?
 	if not Character or not Workspace:FindFirstChild("Islands") then return nil end
@@ -40,37 +40,33 @@ local function detectIsland(): Instance?
 end
 
 ------------------------------------------------------------
---// Helper: classify if horse is special
+-- Helper: check if horse is special
 ------------------------------------------------------------
 local function isSpecialHorse(info): boolean
 	local function containsKeyword(s: string)
-		local lowered = s:lower()
-		return lowered:find("ghost") or lowered:find("neon") or lowered:find("mummy")
+		local lower = s:lower()
+		return lower:find("ghost") or lower:find("neon") or lower:find("mummy")
 	end
-	return containsKeyword(info.breed)
-		or containsKeyword(info.colour)
-		or (info.instance and containsKeyword(info.instance.Name))
+	return containsKeyword(info.breed or "") 
+		or containsKeyword(info.colour or "") 
+		or containsKeyword(info.instance.Name or "")
 end
 
 ------------------------------------------------------------
---// Get all wild horses on island
+-- Get all wild horses in the island
 ------------------------------------------------------------
 local function getWildHorses(island: Instance?): { [number]: table }
 	if not island then return {} end
 	local horses = {}
 
 	for _, horse in ipairs(island:GetChildren()) do
-		if horse:IsA("Model")
-			and horse.Name:sub(1,1) == "{"
-			and horse:FindFirstChild("Humanoid")
+		if horse:IsA("Model") and horse.Name:sub(1,1) == "{" 
+			and horse:FindFirstChild("Humanoid") 
 			and horse:FindFirstChild("HumanoidRootPart")
 			and horse:FindFirstChild("OverheadPart") then
 
 			local overhead = horse.OverheadPart:FindFirstChild("Overhead")
-			if overhead
-				and overhead:FindFirstChild("NameLabel")
-				and overhead.NameLabel.Text == "Wild" then
-
+			if overhead and overhead:FindFirstChild("NameLabel") and overhead.NameLabel.Text == "Wild" then
 				local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
 				local dataAttr = horse:GetAttribute("data")
 				local parsedData = {}
@@ -78,28 +74,22 @@ local function getWildHorses(island: Instance?): { [number]: table }
 					pcall(function() parsedData = HttpService:JSONDecode(dataAttr) end)
 				end
 				local variants = parsedData.variants or {}
-				local colour = variants.colour or "?"
-				local mane = variants.maneColour or "?"
-				local tail = variants.tailColour or "?"
-
 				table.insert(horses, {
 					instance = horse,
 					breed = breed,
-					colour = colour,
-					mane = mane,
-					tail = tail,
+					colour = variants.colour or "?",
+					mane = variants.maneColour or "?",
+					tail = variants.tailColour or "?",
 				})
 			end
 		end
 	end
 
-	-- Sort by special → breed name
-	table.sort(horses, function(a, b)
+	-- Sort: special first, then breed name
+	table.sort(horses, function(a,b)
 		local aSpecial = isSpecialHorse(a)
 		local bSpecial = isSpecialHorse(b)
-		if aSpecial ~= bSpecial then
-			return aSpecial -- special ones first
-		end
+		if aSpecial ~= bSpecial then return aSpecial end
 		return (a.breed or "") < (b.breed or "")
 	end)
 
@@ -107,9 +97,9 @@ local function getWildHorses(island: Instance?): { [number]: table }
 end
 
 ------------------------------------------------------------
---// Build Rayfield button data
+-- Build Rayfield button data
 ------------------------------------------------------------
-local function buildRayfieldData(): { [number]: table }
+local function buildButtonData(): { [number]: table }
 	currentIsland = detectIsland()
 	if not currentIsland then return {} end
 
@@ -123,26 +113,15 @@ local function buildRayfieldData(): { [number]: table }
 			dist = math.floor((Character.HumanoidRootPart.Position - horse.HumanoidRootPart.Position).Magnitude)
 		end
 
-		local displayText = string.format(
-			"[ Breed: %s ] [ Dist: %s ] [ Colour: %s ] [ Mane: %s ] [ Tail: %s ]",
-			info.breed,
-			tostring(dist),
-			info.colour,
-			info.mane,
-			info.tail
-		)
-
 		table.insert(output, {
-			Name = displayText,
-			Color = isSpecialHorse(info)
-				and Color3.fromRGB(180, 90, 255) -- special
-				or Color3.fromRGB(100, 70, 40),  -- normal
+			Name = string.format("[ Breed: %s ][ Dist: %s ][ Colour: %s ][ Mane: %s ][ Tail: %s ]",
+				info.breed, dist, info.colour, info.mane, info.tail),
+			Color = isSpecialHorse(info) and Color3.fromRGB(180, 90, 255) or Color3.fromRGB(100, 70, 40),
 			Callback = function()
-				if Character and Character:FindFirstChild("HumanoidRootPart")
-					and horse:FindFirstChild("HumanoidRootPart") then
-					Character:PivotTo(CFrame.new(horse.HumanoidRootPart.Position + Vector3.new(0, 3, 0)))
+				if Character:FindFirstChild("HumanoidRootPart") and horse:FindFirstChild("HumanoidRootPart") then
+					Character:PivotTo(CFrame.new(horse.HumanoidRootPart.Position + Vector3.new(0,3,0)))
 				end
-			end,
+			end
 		})
 	end
 
@@ -150,10 +129,10 @@ local function buildRayfieldData(): { [number]: table }
 end
 
 ------------------------------------------------------------
---// Public API
+-- Public API
 ------------------------------------------------------------
 function HorseModule.ScanHorses(): { [number]: table }
-	return buildRayfieldData()
+	return buildButtonData()
 end
 
 function HorseModule.GetIslandName(): string
@@ -166,16 +145,16 @@ function HorseModule.OnUpdate(callback: ({ [number]: table }) -> ())
 end
 
 ------------------------------------------------------------
---// Auto-refresh loop (every 1 second)
+-- Auto-refresh loop (every 1 second)
 ------------------------------------------------------------
 task.spawn(function()
 	while true do
 		if refreshCallback then
-			local horses = buildRayfieldData()
-			local hash = HttpService:JSONEncode(horses)
-			if hash ~= lastListHash then
-				lastListHash = hash
-				pcall(function() refreshCallback(horses) end)
+			local data = buildButtonData()
+			local hash = HttpService:JSONEncode(data)
+			if hash ~= lastHash then
+				lastHash = hash
+				pcall(function() refreshCallback(data) end)
 			end
 		end
 		task.wait(1)
