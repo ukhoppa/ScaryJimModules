@@ -1,4 +1,4 @@
--- HauntedIsland Module (live count version)
+-- HauntedIsland Module (first-found loop)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
@@ -15,10 +15,8 @@ local HauntedModule = {}
 HauntedModule.TARGET_COLOR = Color3.fromRGB(164, 255, 172)
 HauntedModule.OFFSET_DISTANCE = 5
 HauntedModule.loopActive = false
-HauntedModule.Tiers = {
-    ["HauntedCollectibles"] = {count = 0, items = {}}
-}
 
+-- Find all valid targets
 local function getTargets()
     local island = Workspace:WaitForChild("Islands"):WaitForChild("Haunted Island")
     local targets = {}
@@ -33,6 +31,7 @@ local function getTargets()
     return targets
 end
 
+-- Teleport and face the target
 local function tpAndFace(model)
     local part = model:FindFirstChild("InteractionPart")
     if not part then return end
@@ -43,17 +42,17 @@ local function tpAndFace(model)
     cam.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
 end
 
+-- Press E
 local function pressE()
     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
     task.wait(0.05)
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
 
--- Heartbeat loop
+-- Heartbeat loop: always collect first found target
 RunService.Heartbeat:Connect(function()
     if HauntedModule.loopActive then
         local targets = getTargets()
-        HauntedModule.Tiers.HauntedCollectibles.count = #targets  -- live count
         if #targets > 0 then
             local current = targets[1]
             if current and current.Parent then
