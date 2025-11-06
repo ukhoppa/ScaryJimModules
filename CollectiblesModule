@@ -1,7 +1,6 @@
--- CollectiblesModule.lua
--- Handles auto-collecting of items on an island with customizable filters
-
 --!strict
+-- HauntedIslandModule.lua
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
@@ -9,116 +8,125 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HRP = Character:WaitForChild("HumanoidRootPart")
-local Camera = Workspace.CurrentCamera
+local hrp = Character:WaitForChild("HumanoidRootPart")
 
 -- Module state
-local loopActive = true
+local loopActive = false
 local collectingActive = false
-local IslandName = "Haunted Island" -- default, can detect dynamically if needed
-local Island = Workspace:WaitForChild("Islands"):WaitForChild(IslandName)
 
--- Configurable collectible tiers
-local COLLECTIBLE_TIERS = {
-    InteractionPart = {
-        filter = function(model)
-            local part = model:FindFirstChild("InteractionPart")
-            return part and part:IsA("BasePart") and part.Color == Color3.fromRGB(164, 255, 172)
-        end,
-        collectPart = function(model)
-            return model:FindFirstChild("InteractionPart")
-        end,
-        count = 0,
-        items = {}
-    },
-    -- Example for another type:
-    -- BodyGreen = {
-    --     filter = function(model)
-    --         local body = model:FindFirstChild("Body")
-    --         return body and body.Color == Color3.fromRGB(119, 193, 119)
-    --     end,
-    --     collectPart = function(model)
-    --         return model:FindFirstChild("Body")
-    --     end,
-    --     count = 0,
-    --     items = {}
-    -- }
+-- Define collectible tiers
+local TIERS = {
+    GhostlyItem = {count = 0, items = {}, highlightColor = Color3.fromRGB(164,255,172)},
+    RareArtifact = {count = 0, items = {}, highlightColor = Color3.fromRGB(255,200,50)},
 }
 
--- Utility: refresh items for all tiers
-local function refreshItems()
-    for tierName, tier in pairs(COLLECTIBLE_TIERS) do
+-- Current target
+local CurrentTarget = nil
+
+-- Detect collectibles in Haunted Island
+local function detectCollectibles()
+    local island = Workspace:FindFirstChild("Islands") and Workspace.Islands:FindFirstChild("Haunted Island")
+    if not island then return end
+
+    for _, tier in pairs(TIERS) do
         tier.count = 0
         tier.items = {}
-        for _, model in ipairs(Island:GetChildren()) do
-            if model:IsA("Model") and tier.filter(model) then
-                table.insert(tier.items, model)
-                tier.count += 1
+    end
+
+    for _, model in ipairs(island:GetChildren()) do
+        if model:IsA("Model") then
+            -- Check for InteractionPart with correct color
+            local part = model:FindFirstChild("InteractionPart")
+            if part and part:IsA("BasePart") then
+                if part.Color == Color3.fromRGB(164,255,172) then
+                    local tier = TIERS.GhostlyItem
+                    tier.count += 1
+                    table.insert(tier.items, {model = model, parts = {part}})
+                elseif part.Color == Color3.fromRGB(255,200,50) then
+                    local tier = TIERS.RareArtifact
+                    tier.count += 1
+                    table.insert(tier.items, {model = model, parts = {part}})
+                end
             end
         end
     end
 end
 
--- Grab the next available item (priority by tier order)
-local function getNextItem()
-    for tierName, tier in pairs(COLLECTIBLE_TIERS) do
+-- Grab next target
+local function grabNextTarget()
+    for _, tierName in ipairs({"GhostlyItem","RareArtifact"}) do
+        local tier = TIERS[tierName]
         if tier.count > 0 and #tier.items > 0 then
-            return tier.items[1], tierName
+            local item = tier.items[1]
+            item.tier = tierName
+            return item
         end
     end
-    return nil, nil
+    return nil
 end
 
--- Teleport near an item
-local function tpNear(item)
-    local part = item:FindFirstChildWhichIsA("BasePart") or item.PrimaryPart
+-- Teleport and face function
+local function tpAndFace(part)
     if not part then return end
-    local direction = (HRP.Position - part.Position)
-    if direction.Magnitude == 0 then
-        direction = Vector3.new(0, 3, -2)
-    end
+    local direction = (hrp.Position - part.Position)
+    if direction.Magnitude == 0 then direction = Vector3.new(0,3,-2) end
     local offset = direction.Unit * 5
-    HRP.CFrame = CFrame.new(part.Position + offset, part.Position)
-    Camera.CameraType = Enum.CameraType.Custom
-    Camera.CFrame = CFrame.new(HRP.Position + Vector3.new(0, 2, 0), part.Position)
+    hrp.CFrame = CFrame.new(part.Position + offset, part.Position)
+    workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+    workspace.CurrentCamera.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
 end
 
--- Press E to collect
-local function pressE()
-    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-    task.wait(0.05)
-    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-end
-
--- Auto-collection loop
+-- Main collection loop
 task.spawn(function()
     while true do
-        if collectingActive then
-            refreshItems()
-            local target, tierName = getNextItem()
-            if target and target.Parent then
-                tpNear(target)
-                pressE()
-                -- Wait until this item is gone
-                repeat
-                    task.wait(0.1)
-                until not target.Parent or not collectingActive
+        if loopActive then
+            detectCollectibles()
+            CurrentTarget = grabNextTarget()
+
+            if CurrentTarget and CurrentTarget.model and CurrentTarget.model.Parent then
+                local part = CurrentTarget.parts[1]
+                if part then
+                    tpAndFace(part)
+                    task.wait(0.05)
+                    -- Press E to collect
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                    task.wait(0.05)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                end
+
+                -- Wait until the current target is gone
+                local elapsed = 0
+                while CurrentTarget.model and CurrentTarget.model.Parent and loopActive do
+                    task.wait(0.2)
+                    elapsed += 0.2
+                    if elapsed >= 150 then
+                        break
+                    end
+                end
             end
         end
-        task.wait(0.2)
+        task.wait(0.5)
     end
 end)
 
--- Character respawn handling
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    Character = newChar
-    HRP = newChar:WaitForChild("HumanoidRootPart")
+-- Update tier counts loop
+task.spawn(function()
+    while true do
+        -- Could integrate with Rayfield labels here
+        task.wait(1)
+    end
 end)
 
--- Module API
-local CollectiblesModule = {}
-CollectiblesModule.Tiers = COLLECTIBLE_TIERS
-CollectiblesModule.ToggleLoop = function(state)
+-- Public API
+local module = {}
+
+module.Tiers = TIERS
+
+module.GetCurrentTarget = function()
+    return CurrentTarget
+end
+
+module.ToggleLoop = function(state)
     if state ~= nil then
         loopActive = state
     else
@@ -126,15 +134,7 @@ CollectiblesModule.ToggleLoop = function(state)
     end
     return loopActive
 end
-CollectiblesModule.ToggleCollecting = function(state)
-    if state ~= nil then
-        collectingActive = state
-    else
-        collectingActive = not collectingActive
-    end
-    return collectingActive
-end
-CollectiblesModule.GetIslandName = function() return IslandName end
-CollectiblesModule.Refresh = refreshItems
 
-return CollectiblesModule
+module.Refresh = detectCollectibles
+
+return module
