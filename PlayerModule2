@@ -45,6 +45,27 @@ local states = {
 ----------------------------------------------------
 -- CHARACTER SETUP
 ----------------------------------------------------
+-- Disable all toggles on death
+local function connectDeathListener()
+    if Humanoid then
+        Humanoid.Died:Connect(function()
+            -- Turn off all active toggles
+            PlayerModule.ToggleFly(false)
+            PlayerModule.ToggleWalkSpeed(false)
+            PlayerModule.ToggleInfiniteJump(false)
+            PlayerModule.ToggleNoClip(false)
+
+            -- Sync GUI toggles (replace these with your actual Rayfield toggle objects)
+            if FlyToggle then FlyToggle:Set(false) end
+            if WalkSpeedToggle then WalkSpeedToggle:Set(false) end
+            if InfiniteJumpToggle then InfiniteJumpToggle:Set(false) end
+            if NoClipToggle then NoClipToggle:Set(false) end
+        end)
+    end
+end
+
+
+
 local function snapshotCharacter(char)
     if not char then return end
     Character = char
@@ -66,6 +87,7 @@ local function snapshotCharacter(char)
     if states.Fly then PlayerModule.ToggleFly(true) end
     if states.NoClip then PlayerModule.ToggleNoClip(true) end
     if states.WalkSpeedOverride then PlayerModule.ToggleWalkSpeed(true) end
+    connectDeathListener()
 end
 
 Players.LocalPlayer.CharacterAdded:Connect(function(newChar)
