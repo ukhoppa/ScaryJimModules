@@ -2,7 +2,6 @@
 --!strict
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
@@ -10,25 +9,24 @@ local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 
 local HorseModule = {}
 local refreshCallback: (({ [number]: table }) -> ())? = nil
-local lastListHash = ""
+local horseTable: {[string]: table} = {}  -- keyed by Model.Name (UUID)
+local currentIsland: Instance? = nil
 
--- Detect which island the player is on by checking HumanoidRootPart
+-- Detect island once (redetect on respawn)
 local function detectIsland(): Instance?
     if not Character or not Character:FindFirstChild("HumanoidRootPart") then return nil end
     local hrp = Character.HumanoidRootPart
     local islandsFolder = Workspace:FindFirstChild("Islands")
     if not islandsFolder then return nil end
     for _, island in ipairs(islandsFolder:GetChildren()) do
-        if island:IsA("Folder") then
-            if hrp:IsDescendantOf(island) then
-                return island
-            end
+        if island:IsA("Folder") and hrp:IsDescendantOf(island) then
+            return island
         end
     end
     return nil
 end
 
--- Helper to check for special horses
+-- Special horse check
 local function isSpecialHorse(info): boolean
     local function containsKeyword(s: string)
         if not s then return false end
@@ -42,18 +40,13 @@ local function isSpecialHorse(info): boolean
         or (info.instance and containsKeyword(info.instance.Name))
 end
 
--- Get all wild horses on the island
-local function getWildHorses(island: Instance?): { [number]: table }
-    if not island then return {} end
-    local horses: { [number]: table } = {}
-    local seen: {[string]: boolean} = {}
-
-    for _, horse in ipairs(island:GetChildren()) do
+-- Scan the island folder for all wild horses once
+local function scanIsland()
+    if not currentIsland then return end
+    local newHorseTable: {[string]: table} = {}
+    for _, horse in ipairs(currentIsland:GetChildren()) do
         if horse:IsA("Model") and horse.Name:sub(1,1) == "{" and horse:FindFirstChild("HumanoidRootPart") and horse:FindFirstChild("OverheadPart") then
             local id = horse.Name
-            if seen[id] then continue end
-            seen[id] = true
-
             local overhead = horse.OverheadPart:FindFirstChild("Overhead")
             if overhead and overhead:FindFirstChild("NameLabel") and overhead.NameLabel.Text == "Wild" then
                 local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
@@ -72,7 +65,7 @@ local function getWildHorses(island: Instance?): { [number]: table }
                     dist = math.floor((Character.HumanoidRootPart.Position - horse.HumanoidRootPart.Position).Magnitude)
                 end
 
-                table.insert(horses, {
+                newHorseTable[id] = {
                     instance = horse,
                     id = id,
                     breed = breed,
@@ -80,30 +73,18 @@ local function getWildHorses(island: Instance?): { [number]: table }
                     mane = mane,
                     tail = tail,
                     dist = dist,
-                })
+                }
             end
         end
     end
 
-    -- Sort: specials first, then alphabetically by breed
-    table.sort(horses, function(a, b)
-        local aSpec = isSpecialHorse(a)
-        local bSpec = isSpecialHorse(b)
-        if aSpec ~= bSpec then return aSpec end
-        return (a.breed or "") < (b.breed or "")
-    end)
-
-    return horses
+    horseTable = newHorseTable
 end
 
--- Build Rayfield button data
-local function buildRayfieldData(): { [number]: table }
-    local island = detectIsland()
-    if not island then return {} end
-
-    local horses = getWildHorses(island)
+-- Build Rayfield button data from horseTable
+local function buildButtonData(): { [number]: table }
     local output: { [number]: table } = {}
-    for _, h in ipairs(horses) do
+    for _, h in pairs(horseTable) do
         table.insert(output, {
             Id = h.id,
             Name = string.format("🐎 [Breed: %s] [Dist: %s] [Color: %s] [Mane: %s] [Tail: %s]",
@@ -116,36 +97,57 @@ local function buildRayfieldData(): { [number]: table }
             end
         })
     end
+
+    -- Sort specials first, then alphabetically by breed
+    table.sort(output, function(a,b)
+        local aSpec = isSpecialHorse(horseTable[a.Id])
+        local bSpec = isSpecialHorse(horseTable[b.Id])
+        if aSpec ~= bSpec then return aSpec end
+        return a.Name < b.Name
+    end)
+
     return output
 end
 
 -- Public API
 function HorseModule.ScanHorses(): { [number]: table }
-    return buildRayfieldData()
+    return buildButtonData()
 end
 
 function HorseModule.GetIslandName(): string
-    local island = detectIsland()
-    return island and island.Name or "Unknown"
+    return currentIsland and currentIsland.Name or "Unknown"
 end
 
 function HorseModule.OnUpdate(callback: ({ [number]: table }) -> ())
     refreshCallback = callback
 end
 
--- Auto-refresh loop every second
+-- Initialize once
+currentIsland = detectIsland()
+scanIsland()
+
+-- Refresh loop every 1s to update distances / new horses
 task.spawn(function()
     while true do
         if refreshCallback then
-            local horses = buildRayfieldData()
-            local hash = HttpService:JSONEncode(horses)
-            if hash ~= lastListHash then
-                lastListHash = hash
-                pcall(function() refreshCallback(horses) end)
+            scanIsland()
+            local data = buildButtonData()
+            local hash = HttpService:JSONEncode(data)
+            if hash ~= HorseModule._lastHash then
+                HorseModule._lastHash = hash
+                pcall(function() refreshCallback(data) end)
             end
         end
         task.wait(1)
     end
+end)
+
+-- Redetect island on respawn
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+    task.wait(1)
+    currentIsland = detectIsland()
+    scanIsland()
 end)
 
 return HorseModule
