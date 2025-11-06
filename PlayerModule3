@@ -63,11 +63,6 @@ local function connectDeathListener()
             PlayerModule.ToggleInfiniteJump(false)
             PlayerModule.ToggleNoClip(false)
 
-            -- Update GUI toggles safely
-            if PlayerModule.GUIToggles.Fly then PlayerModule.GUIToggles.Fly:Set(false) end
-            if PlayerModule.GUIToggles.WalkSpeed then PlayerModule.GUIToggles.WalkSpeed:Set(false) end
-            if PlayerModule.GUIToggles.InfiniteJump then PlayerModule.GUIToggles.InfiniteJump:Set(false) end
-            if PlayerModule.GUIToggles.NoClip then PlayerModule.GUIToggles.NoClip:Set(false) end
         end)
     end
 end
