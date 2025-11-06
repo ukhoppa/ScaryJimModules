@@ -1,4 +1,4 @@
---// HorseModule.lua – Auto Island Wild Horse Scanner
+--// HorseModule.lua – Auto Island Wild Horse Scanner (Auto-Refresh)
 --!strict
 
 ------------------------------------------------------------
@@ -7,6 +7,7 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 ------------------------------------------------------------
 --// Player references
@@ -19,6 +20,8 @@ local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 ------------------------------------------------------------
 local HorseModule = {}
 local currentIsland: Instance? = nil
+local refreshCallback: (({ [number]: table }) -> ())? = nil
+local lastListHash = ""
 
 ------------------------------------------------------------
 --// Detect current island
@@ -104,11 +107,12 @@ local function getWildHorses(island: Instance?): { [number]: table }
 end
 
 ------------------------------------------------------------
---// Core: refresh + build data for Rayfield
+--// Build Rayfield button data
 ------------------------------------------------------------
-function HorseModule.ScanHorses(): { [number]: table }
+local function buildRayfieldData(): { [number]: table }
 	currentIsland = detectIsland()
 	if not currentIsland then return {} end
+
 	local horses = getWildHorses(currentIsland)
 	local output = {}
 
@@ -121,9 +125,12 @@ function HorseModule.ScanHorses(): { [number]: table }
 
 		table.insert(output, {
 			Name = string.format("%s [Dist: %s]", info.breed, tostring(dist)),
-			Color = isSpecialHorse(info) and Color3.fromRGB(180, 90, 255) or Color3.fromRGB(100, 70, 40),
+			Color = isSpecialHorse(info)
+				and Color3.fromRGB(180, 90, 255) -- special
+				or Color3.fromRGB(100, 70, 40),  -- normal
 			Callback = function()
-				if Character and Character:FindFirstChild("HumanoidRootPart") and horse:FindFirstChild("HumanoidRootPart") then
+				if Character and Character:FindFirstChild("HumanoidRootPart")
+					and horse:FindFirstChild("HumanoidRootPart") then
 					Character:PivotTo(CFrame.new(horse.HumanoidRootPart.Position + Vector3.new(0, 3, 0)))
 				end
 			end,
@@ -134,11 +141,37 @@ function HorseModule.ScanHorses(): { [number]: table }
 end
 
 ------------------------------------------------------------
---// Utility: island info
+--// Public API
 ------------------------------------------------------------
+function HorseModule.ScanHorses(): { [number]: table }
+	return buildRayfieldData()
+end
+
 function HorseModule.GetIslandName(): string
 	currentIsland = detectIsland()
 	return currentIsland and currentIsland.Name or "Unknown"
 end
+
+-- Provide a callback that receives a fresh button list every second
+function HorseModule.OnUpdate(callback: ({ [number]: table }) -> ())
+	refreshCallback = callback
+end
+
+------------------------------------------------------------
+--// Auto-refresh loop (every 1 second)
+------------------------------------------------------------
+task.spawn(function()
+	while true do
+		if refreshCallback then
+			local horses = buildRayfieldData()
+			local hash = HttpService:JSONEncode(horses) -- cheap change detector
+			if hash ~= lastListHash then
+				lastListHash = hash
+				pcall(function() refreshCallback(horses) end)
+			end
+		end
+		task.wait(1)
+	end
+end)
 
 return HorseModule
