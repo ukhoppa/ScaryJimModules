@@ -106,7 +106,9 @@ local function grabBestRock()
     for _, tierName in ipairs(priority) do
         local tier = ROCK_TIERS[tierName]
         if tier.count > 0 and #tier.rocks > 0 then
-            return tier.rocks[1] -- pick first available rock
+            local rock = tier.rocks[1]
+            rock.tier = tierName -- store the tier name
+            return rock
         end
     end
     return nil
