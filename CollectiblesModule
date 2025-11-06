@@ -1,4 +1,4 @@
--- HauntedIsland Module
+-- HauntedIsland Module (live count version)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
@@ -49,21 +49,19 @@ local function pressE()
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
 
--- Main loop
+-- Heartbeat loop
 RunService.Heartbeat:Connect(function()
-        if HauntedModule.loopActive then
-            local targets = getTargets()
-            if #targets > 0 then
-                local current = targets[1]
-                if current and current.Parent then
-                    tpAndFace(current)
-                    pressE()
-                    HauntedModule.Tiers.HauntedCollectibles.count = HauntedModule.Tiers.HauntedCollectibles.count + 1
-                end
+    if HauntedModule.loopActive then
+        local targets = getTargets()
+        HauntedModule.Tiers.HauntedCollectibles.count = #targets  -- live count
+        if #targets > 0 then
+            local current = targets[1]
+            if current and current.Parent then
+                tpAndFace(current)
+                pressE()
             end
         end
-        task.wait(0.1)
-    
+    end
 end)
 
 -- Public API
