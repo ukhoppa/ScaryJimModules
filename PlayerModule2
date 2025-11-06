@@ -1,6 +1,6 @@
 -- PlayerModule.lua
 local PlayerModule = {}
-Rayfield:Notify({Title = "👤 Player", Content = "Player module loaded", Duration = 10})
+
 ----------------------------------------------------
 -- SETTINGS
 ----------------------------------------------------
