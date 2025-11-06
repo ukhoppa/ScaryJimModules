@@ -126,14 +126,14 @@ local function enableFly(active)
             Humanoid:ChangeState(Enum.HumanoidStateType.Physics)
             Humanoid.PlatformStand = true
         end
-  --  else
-     --   if bv then bv:Destroy() bv = nil end
-      --  if bg then bg:Destroy() bg = nil end
-      --  if Humanoid then
-       --     Humanoid.PlatformStand = false
-       --     Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-     --   end
-   -- end
+    else
+        if bv then bv:Destroy() bv = nil end
+        if bg then bg:Destroy() bg = nil end
+        if Humanoid then
+            Humanoid.PlatformStand = false
+            Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+    end
 end
 
 ----------------------------------------------------
