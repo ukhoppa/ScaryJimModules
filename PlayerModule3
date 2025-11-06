@@ -233,7 +233,9 @@ RunService.Heartbeat:Connect(function(dt)
         if move.Magnitude > 0 then
             move = move.Unit * PlayerModule.settings.FlySpeed
         else
-            move = Vector3.zero
+ -- don't write to Velocity at all if not moving
+        bv.Velocity = Vector3.zero -- optional: can even skip this
+          --  move = Vector3.zero
         end
 
         local smooth = math.clamp(dt * 10, 0, 1)
