@@ -1,47 +1,38 @@
---// HorseModule.lua
 --!strict
+-- HorseModule.lua
 
---// Services
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
---// Player references
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local HRP = Character:WaitForChild("HumanoidRootPart")
 
---// State
 local HorseModule = {}
 local CurrentIsland: Instance? = nil
-local Horses: {[string]: table} = {} -- keyed by UUID
-local RefreshCallback: (({ [number]: table }) -> ())? = nil
+local Horses: {[string]: table} = {}
+local RefreshCallback: (({[number]: table}) -> ())? = nil
 
-------------------------------------------------------------
--- Detect current island
-------------------------------------------------------------
+-- Detect current island based on character position
 local function detectIsland(): Instance?
-	if CurrentIsland and CurrentIsland.Parent then
-		return CurrentIsland
-	end
-
+	if CurrentIsland and CurrentIsland.Parent then return CurrentIsland end
 	if not Character or not Workspace:FindFirstChild("Islands") then return nil end
-	local islands = Workspace:FindFirstChild("Islands")
+
+	local islands = Workspace.Islands
 	local parent = Character.Parent
 	while parent and parent ~= Workspace do
 		if parent.Parent == islands then
 			CurrentIsland = parent
-			return parent
+			return CurrentIsland
 		end
 		parent = parent.Parent
 	end
 	return nil
 end
 
-------------------------------------------------------------
--- Check if horse is special
-------------------------------------------------------------
+-- Detect special horses
 local function isSpecialHorse(info: table): boolean
 	local function containsKeyword(s: string)
 		s = s:lower()
@@ -52,13 +43,10 @@ local function isSpecialHorse(info: table): boolean
 		or (info.instance and containsKeyword(info.instance.Name))
 end
 
-------------------------------------------------------------
--- Scan island for wild horses
-------------------------------------------------------------
+-- Scan the current island for wild horses
 local function scanHorses(): {[string]: table}
 	local island = detectIsland()
 	if not island then return {} end
-
 	local newHorses: {[string]: table} = {}
 
 	for _, model in ipairs(island:GetChildren()) do
@@ -76,16 +64,12 @@ local function scanHorses(): {[string]: table}
 					pcall(function() parsedData = HttpService:JSONDecode(dataAttr) end)
 				end
 				local variants = parsedData.variants or {}
-				local colour = variants.colour or "?"
-				local mane = variants.maneColour or "?"
-				local tail = variants.tailColour or "?"
-
 				newHorses[model.Name] = {
 					instance = model,
 					breed = breed,
-					colour = colour,
-					mane = mane,
-					tail = tail,
+					colour = variants.colour or "?",
+					mane = variants.maneColour or "?",
+					tail = variants.tailColour or "?",
 				}
 			end
 		end
@@ -95,11 +79,9 @@ local function scanHorses(): {[string]: table}
 	return Horses
 end
 
-------------------------------------------------------------
--- Build Rayfield-friendly data
-------------------------------------------------------------
-local function buildButtonData(): { [number]: table }
-	local output: { [number]: table } = {}
+-- Build data for GUI buttons
+local function buildButtonData(): {[number]: table}
+	local output: {[number]: table} = {}
 	for _, info in pairs(Horses) do
 		if info.instance and HRP then
 			local dist = math.floor((HRP.Position - info.instance.HumanoidRootPart.Position).Magnitude)
@@ -124,10 +106,8 @@ local function buildButtonData(): { [number]: table }
 	return output
 end
 
-------------------------------------------------------------
 -- Public API
-------------------------------------------------------------
-function HorseModule.ScanHorses(): { [number]: table }
+function HorseModule.ScanHorses(): {[number]: table}
 	scanHorses()
 	return buildButtonData()
 end
@@ -137,13 +117,11 @@ function HorseModule.GetIslandName(): string
 	return island and island.Name or "Unknown"
 end
 
-function HorseModule.OnUpdate(callback: ({ [number]: table }) -> ())
+function HorseModule.OnUpdate(callback: ({[number]: table}) -> ())
 	RefreshCallback = callback
 end
 
-------------------------------------------------------------
--- Auto-refresh loop
-------------------------------------------------------------
+-- Auto-refresh loop (1 second interval)
 task.spawn(function()
 	while true do
 		scanHorses()
@@ -156,5 +134,4 @@ task.spawn(function()
 	end
 end)
 
-------------------------------------------------------------
 return HorseModule
