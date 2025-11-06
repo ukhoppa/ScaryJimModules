@@ -1,140 +1,80 @@
---!strict
--- HauntedIslandModule.lua
-
+-- HauntedIsland Module
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local hrp = Character:WaitForChild("HumanoidRootPart")
+local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local hrp = char:WaitForChild("HumanoidRootPart")
+local cam = Workspace.CurrentCamera
 
--- Module state
-local loopActive = false
-local collectingActive = false
+local HauntedModule = {}
 
--- Define collectible tiers
-local TIERS = {
-    GhostlyItem = {count = 0, items = {}, highlightColor = Color3.fromRGB(164,255,172)},
-    RareArtifact = {count = 0, items = {}, highlightColor = Color3.fromRGB(255,200,50)},
+-- Config
+HauntedModule.TARGET_COLOR = Color3.fromRGB(164, 255, 172)
+HauntedModule.OFFSET_DISTANCE = 5
+HauntedModule.loopActive = false
+HauntedModule.Tiers = {
+    ["HauntedCollectibles"] = {count = 0, items = {}}
 }
 
--- Current target
-local CurrentTarget = nil
-
--- Detect collectibles in Haunted Island
-local function detectCollectibles()
-    local island = Workspace:FindFirstChild("Islands") and Workspace.Islands:FindFirstChild("Haunted Island")
-    if not island then return end
-
-    for _, tier in pairs(TIERS) do
-        tier.count = 0
-        tier.items = {}
-    end
-
-    for _, model in ipairs(island:GetChildren()) do
-        if model:IsA("Model") then
-            -- Check for InteractionPart with correct color
-            local part = model:FindFirstChild("InteractionPart")
-            if part and part:IsA("BasePart") then
-                if part.Color == Color3.fromRGB(164,255,172) then
-                    local tier = TIERS.GhostlyItem
-                    tier.count += 1
-                    table.insert(tier.items, {model = model, parts = {part}})
-                elseif part.Color == Color3.fromRGB(255,200,50) then
-                    local tier = TIERS.RareArtifact
-                    tier.count += 1
-                    table.insert(tier.items, {model = model, parts = {part}})
-                end
+local function getTargets()
+    local island = Workspace:WaitForChild("Islands"):WaitForChild("Haunted Island")
+    local targets = {}
+    for _, obj in ipairs(island:GetChildren()) do
+        if obj:IsA("Model") then
+            local part = obj:FindFirstChild("InteractionPart")
+            if part and part:IsA("BasePart") and part.Color == HauntedModule.TARGET_COLOR then
+                table.insert(targets, obj)
             end
         end
     end
+    return targets
 end
 
--- Grab next target
-local function grabNextTarget()
-    for _, tierName in ipairs({"GhostlyItem","RareArtifact"}) do
-        local tier = TIERS[tierName]
-        if tier.count > 0 and #tier.items > 0 then
-            local item = tier.items[1]
-            item.tier = tierName
-            return item
-        end
-    end
-    return nil
-end
-
--- Teleport and face function
-local function tpAndFace(part)
+local function tpAndFace(model)
+    local part = model:FindFirstChild("InteractionPart")
     if not part then return end
-    local direction = (hrp.Position - part.Position)
-    if direction.Magnitude == 0 then direction = Vector3.new(0,3,-2) end
-    local offset = direction.Unit * 5
-    hrp.CFrame = CFrame.new(part.Position + offset, part.Position)
-    workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
-    workspace.CurrentCamera.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
+    local direction = (hrp.Position - part.Position).Unit
+    local offsetPos = part.Position + direction * HauntedModule.OFFSET_DISTANCE
+    hrp.CFrame = CFrame.new(offsetPos, part.Position)
+    cam.CameraType = Enum.CameraType.Custom
+    cam.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
 end
 
--- Main collection loop
+local function pressE()
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(0.05)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+-- Main loop
 task.spawn(function()
     while true do
-        if loopActive then
-            detectCollectibles()
-            CurrentTarget = grabNextTarget()
-
-            if CurrentTarget and CurrentTarget.model and CurrentTarget.model.Parent then
-                local part = CurrentTarget.parts[1]
-                if part then
-                    tpAndFace(part)
-                    task.wait(0.05)
-                    -- Press E to collect
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                    task.wait(0.05)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                end
-
-                -- Wait until the current target is gone
-                local elapsed = 0
-                while CurrentTarget.model and CurrentTarget.model.Parent and loopActive do
-                    task.wait(0.2)
-                    elapsed += 0.2
-                    if elapsed >= 150 then
-                        break
-                    end
+        if HauntedModule.loopActive then
+            local targets = getTargets()
+            if #targets > 0 then
+                local current = targets[1]
+                if current and current.Parent then
+                    tpAndFace(current)
+                    pressE()
+                    HauntedModule.Tiers.HauntedCollectibles.count = HauntedModule.Tiers.HauntedCollectibles.count + 1
                 end
             end
         end
-        task.wait(0.5)
-    end
-end)
-
--- Update tier counts loop
-task.spawn(function()
-    while true do
-        -- Could integrate with Rayfield labels here
-        task.wait(1)
+        task.wait(0.1)
     end
 end)
 
 -- Public API
-local module = {}
-
-module.Tiers = TIERS
-
-module.GetCurrentTarget = function()
-    return CurrentTarget
-end
-
-module.ToggleLoop = function(state)
+function HauntedModule.ToggleLoop(state)
     if state ~= nil then
-        loopActive = state
+        HauntedModule.loopActive = state
     else
-        loopActive = not loopActive
+        HauntedModule.loopActive = not HauntedModule.loopActive
     end
-    return loopActive
+    return HauntedModule.loopActive
 end
 
-module.Refresh = detectCollectibles
-
-return module
+return HauntedModule
