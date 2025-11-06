@@ -1,0 +1,140 @@
+-- CollectiblesModule.lua
+-- Handles auto-collecting of items on an island with customizable filters
+
+--!strict
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HRP = Character:WaitForChild("HumanoidRootPart")
+local Camera = Workspace.CurrentCamera
+
+-- Module state
+local loopActive = true
+local collectingActive = false
+local IslandName = "Haunted Island" -- default, can detect dynamically if needed
+local Island = Workspace:WaitForChild("Islands"):WaitForChild(IslandName)
+
+-- Configurable collectible tiers
+local COLLECTIBLE_TIERS = {
+    InteractionPart = {
+        filter = function(model)
+            local part = model:FindFirstChild("InteractionPart")
+            return part and part:IsA("BasePart") and part.Color == Color3.fromRGB(164, 255, 172)
+        end,
+        collectPart = function(model)
+            return model:FindFirstChild("InteractionPart")
+        end,
+        count = 0,
+        items = {}
+    },
+    -- Example for another type:
+    -- BodyGreen = {
+    --     filter = function(model)
+    --         local body = model:FindFirstChild("Body")
+    --         return body and body.Color == Color3.fromRGB(119, 193, 119)
+    --     end,
+    --     collectPart = function(model)
+    --         return model:FindFirstChild("Body")
+    --     end,
+    --     count = 0,
+    --     items = {}
+    -- }
+}
+
+-- Utility: refresh items for all tiers
+local function refreshItems()
+    for tierName, tier in pairs(COLLECTIBLE_TIERS) do
+        tier.count = 0
+        tier.items = {}
+        for _, model in ipairs(Island:GetChildren()) do
+            if model:IsA("Model") and tier.filter(model) then
+                table.insert(tier.items, model)
+                tier.count += 1
+            end
+        end
+    end
+end
+
+-- Grab the next available item (priority by tier order)
+local function getNextItem()
+    for tierName, tier in pairs(COLLECTIBLE_TIERS) do
+        if tier.count > 0 and #tier.items > 0 then
+            return tier.items[1], tierName
+        end
+    end
+    return nil, nil
+end
+
+-- Teleport near an item
+local function tpNear(item)
+    local part = item:FindFirstChildWhichIsA("BasePart") or item.PrimaryPart
+    if not part then return end
+    local direction = (HRP.Position - part.Position)
+    if direction.Magnitude == 0 then
+        direction = Vector3.new(0, 3, -2)
+    end
+    local offset = direction.Unit * 5
+    HRP.CFrame = CFrame.new(part.Position + offset, part.Position)
+    Camera.CameraType = Enum.CameraType.Custom
+    Camera.CFrame = CFrame.new(HRP.Position + Vector3.new(0, 2, 0), part.Position)
+end
+
+-- Press E to collect
+local function pressE()
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(0.05)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+-- Auto-collection loop
+task.spawn(function()
+    while true do
+        if collectingActive then
+            refreshItems()
+            local target, tierName = getNextItem()
+            if target and target.Parent then
+                tpNear(target)
+                pressE()
+                -- Wait until this item is gone
+                repeat
+                    task.wait(0.1)
+                until not target.Parent or not collectingActive
+            end
+        end
+        task.wait(0.2)
+    end
+end)
+
+-- Character respawn handling
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+    HRP = newChar:WaitForChild("HumanoidRootPart")
+end)
+
+-- Module API
+local CollectiblesModule = {}
+CollectiblesModule.Tiers = COLLECTIBLE_TIERS
+CollectiblesModule.ToggleLoop = function(state)
+    if state ~= nil then
+        loopActive = state
+    else
+        loopActive = not loopActive
+    end
+    return loopActive
+end
+CollectiblesModule.ToggleCollecting = function(state)
+    if state ~= nil then
+        collectingActive = state
+    else
+        collectingActive = not collectingActive
+    end
+    return collectingActive
+end
+CollectiblesModule.GetIslandName = function() return IslandName end
+CollectiblesModule.Refresh = refreshItems
+
+return CollectiblesModule
