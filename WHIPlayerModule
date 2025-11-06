@@ -72,7 +72,7 @@ RunService.Heartbeat:Connect(function()
 
         -- 🧭 Make the camera face the character while flying
         -- Keeps camera looking toward HRP
-        camera.CFrame = CFrame.new(camera.CFrame.Position, hrp.Position)
+       // camera.CFrame = CFrame.new(camera.CFrame.Position, hrp.Position)
     end
 end)
 
