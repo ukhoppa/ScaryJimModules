@@ -1,23 +1,124 @@
+--!strict
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 
-local HorseTab = Window:CreateTab("🐎 Wild Horses")
-local HorseModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/ukhoppa/ScaryJimModules/refs/heads/main/HorseModule"))()
+local HorseModule = {}
+local currentIsland: Instance? = nil
+local horseTable: {[string]: table} = {} -- keyed by UUID
+local refreshCallback: (({[number]: table}) -> ())? = nil
 
+local function detectIsland()
+	if currentIsland and currentIsland.Parent then
+		return currentIsland
+	end
+	local islands = Workspace:FindFirstChild("Islands")
+	if not islands then return nil end
+	local parent = Character.Parent
+	while parent and parent ~= Workspace do
+		if parent.Parent == islands then
+			currentIsland = parent
+			return currentIsland
+		end
+		parent = parent.Parent
+	end
+	return nil
+end
 
+local function isSpecialHorse(info)
+	local function containsKeyword(s: string)
+		return s:lower():find("ghost") or s:lower():find("neon") or s:lower():find("mummy")
+	end
+	return containsKeyword(info.breed) or containsKeyword(info.colour) or containsKeyword(info.instance.Name)
+end
 
-local horseButtons = {}
-HorseModule.OnUpdate(function(data)
-    -- clear old buttons
-    for _, btn in ipairs(horseButtons) do btn:Destroy() end
-    horseButtons = {}
+local function scanIslandHorses()
+	local island = detectIsland()
+	if not island then return {} end
 
-    -- create new buttons
-    for _, info in ipairs(data) do
-        local btn = HorseTab:CreateButton({
-            Name = info.Name,
-            Callback = info.Callback
-        })
-        btn.Button.BackgroundColor3 = info.Color
-        table.insert(horseButtons, btn)
-    end
+	local foundHorses: {[string]: table} = {}
+
+	for _, model in ipairs(island:GetChildren()) do
+		if model:IsA("Model") and model.Name:sub(1,1) == "{" and model:FindFirstChild("Humanoid") and model:FindFirstChild("HumanoidRootPart") and model:FindFirstChild("OverheadPart") then
+			local overhead = model.OverheadPart:FindFirstChild("Overhead")
+			if overhead and overhead:FindFirstChild("NameLabel") and overhead.NameLabel.Text == "Wild" then
+				local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
+				local dataAttr = model:GetAttribute("data")
+				local parsedData = {}
+				if dataAttr then pcall(function() parsedData = HttpService:JSONDecode(dataAttr) end) end
+				local variants = parsedData.variants or {}
+				local colour = variants.colour or "?"
+				local mane = variants.maneColour or "?"
+				local tail = variants.tailColour or "?"
+
+				foundHorses[model.Name] = {
+					instance = model,
+					breed = breed,
+					colour = colour,
+					mane = mane,
+					tail = tail
+				}
+			end
+		end
+	end
+
+	horseTable = foundHorses
+	return foundHorses
+end
+
+function HorseModule.ScanHorses()
+	local data = scanIslandHorses()
+	local output: {[number]: table} = {}
+
+	for _, info in pairs(data) do
+		local dist = "?"
+		if Character:FindFirstChild("HumanoidRootPart") and info.instance:FindFirstChild("HumanoidRootPart") then
+			dist = math.floor((Character.HumanoidRootPart.Position - info.instance.HumanoidRootPart.Position).Magnitude)
+		end
+
+		table.insert(output, {
+			Name = string.format("🐎 [Breed: %s] [Dist: %s] [Color: %s] [Mane: %s] [Tail: %s]", info.breed, tostring(dist), info.colour, info.mane, info.tail),
+			Color = isSpecialHorse(info) and Color3.fromRGB(180,90,255) or Color3.fromRGB(100,70,40),
+			Callback = function()
+				if Character:FindFirstChild("HumanoidRootPart") and info.instance:FindFirstChild("HumanoidRootPart") then
+					Character:PivotTo(CFrame.new(info.instance.HumanoidRootPart.Position + Vector3.new(0,3,0)))
+				end
+			end
+		})
+	end
+
+	return output
+end
+
+function HorseModule.GetIslandName()
+	local island = detectIsland()
+	return island and island.Name or "Unknown"
+end
+
+function HorseModule.OnUpdate(callback)
+	refreshCallback = callback
+end
+
+-- auto-refresh loop every second
+task.spawn(function()
+	while true do
+		if refreshCallback then
+			local data = HorseModule.ScanHorses()
+			pcall(function() refreshCallback(data) end)
+		end
+		task.wait(1)
+	end
 end)
+
+-- reset on respawn
+Players.LocalPlayer.CharacterAdded:Connect(function(char)
+	Character = char
+	currentIsland = nil
+	task.wait(1)
+end)
+
+return HorseModule
