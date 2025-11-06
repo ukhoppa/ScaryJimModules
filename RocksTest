@@ -175,6 +175,7 @@ task.spawn(function()
 end)
 
 --// Utility: delete a folder in the current island
+--// Utility: recursively delete all folders in island with a given name
 local function deleteFolderInIsland(folderName)
     local island = detectIsland()
     if not island then
@@ -182,21 +183,35 @@ local function deleteFolderInIsland(folderName)
         return
     end
 
-    local folder = island:FindFirstChild(folderName)
-    if not folder then
-        warn("[Rocks] Folder '"..folderName.."' not found in "..island.Name)
+    -- Find all descendants named folderName that are Folders
+    local foundFolders = {}
+    local function findFolders(parent)
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA("Folder") and child.Name == folderName then
+                table.insert(foundFolders, child)
+            end
+            findFolders(child) -- recurse
+        end
+    end
+
+    findFolders(island)
+
+    if #foundFolders == 0 then
+        warn("[Rocks] No folders named '"..folderName.."' found in "..island.Name)
         return
     end
 
-    for _, obj in ipairs(folder:GetDescendants()) do
-        obj:Destroy()
-        print("[Rocks] Destroyed:", obj:GetFullName())
+    -- Destroy everything inside and then the folder itself
+    for _, folder in ipairs(foundFolders) do
+        for _, obj in ipairs(folder:GetDescendants()) do
+            obj:Destroy()
+            print("[Rocks] Destroyed:", obj:GetFullName())
+        end
+        folder:Destroy()
+        print("[Rocks] Destroyed folder:", folder:GetFullName())
     end
-
-    -- Optionally destroy the folder itself
-    folder:Destroy()
-    print("[Rocks] Destroyed folder:", folderName)
 end
+
 
 
 --// Auto refresh loop (when not mining)
