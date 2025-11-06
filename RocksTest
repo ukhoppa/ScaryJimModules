@@ -23,8 +23,7 @@ local miningActive = false
 --// Rock tiers
 local ROCK_TIERS = {
     VolcanicBoulder = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(255,140,0)},
-    PrismaticGem    = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(95,189,175)},
-    MineralGem      = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(112,189,95)},
+    PrismaticGem    = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(95,189,175)},  
     MineralRock     = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(213,115,61)},
     NormalRock      = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(163,162,165)},
 }
@@ -73,7 +72,7 @@ local function classifyRock(model)
     end
 
     if #primaryParts == 5 and rocksPart then
-        return "MineralRock", parts
+        return "alRock", parts
     elseif #primaryParts == 7 and rocksPart then
         return "PrismaticGem", parts
     end
@@ -103,7 +102,7 @@ local function refreshRocks()
     end
 
     table.sort(MiningList, function(a,b)
-        local order = {"VolcanicBoulder","PrismaticGem","MineralGem","MineralRock","NormalRock"}
+        local order = {"VolcanicBoulder","PrismaticGem","alRock","NormalRock"}
         local aIndex, bIndex = 0,0
         for i,v in ipairs(order) do
             if v == a.tier then aIndex=i end
