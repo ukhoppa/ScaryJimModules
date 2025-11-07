@@ -1,0 +1,185 @@
+-- 🐎 HorseModule.lua
+-- NPC control module (based on PlayerModule)
+-- Controls flight, walk speed, infinite jump, and noclip for one NPC
+
+local HorseModule = {}
+
+----------------------------------------------------
+-- SETTINGS
+----------------------------------------------------
+HorseModule.settings = {
+    FlyEnabled = false,
+    FlySpeed = 60,
+
+    WalkSpeedEnabled = false,
+    WalkSpeed = 30,
+
+    InfiniteJump = false,
+    NoClip = false,
+}
+
+----------------------------------------------------
+-- SERVICES
+----------------------------------------------------
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+
+----------------------------------------------------
+-- NPC REFERENCE
+----------------------------------------------------
+local horse = Workspace:WaitForChild("Islands"):WaitForChild("Mainland"):WaitForChild("{b8314452-f8c3-4363-97d4-ad3ad6d75736}")
+local humanoid = horse:WaitForChild("Humanoid")
+local hrp = horse:WaitForChild("HumanoidRootPart")
+
+----------------------------------------------------
+-- INTERNAL STATE
+----------------------------------------------------
+local bv, bg
+local initial = {
+    WalkSpeed = humanoid.WalkSpeed,
+    JumpPower = humanoid.JumpPower,
+    CanCollide = {},
+}
+local states = {
+    Fly = false,
+    WalkSpeedOverride = false,
+    InfiniteJump = false,
+    NoClip = false,
+}
+
+-- record initial CanCollide
+for _, obj in ipairs(horse:GetDescendants()) do
+    if obj:IsA("BasePart") then
+        initial.CanCollide[obj] = obj.CanCollide
+    end
+end
+
+----------------------------------------------------
+-- FLY SYSTEM
+----------------------------------------------------
+local function enableFly(active)
+    if not hrp then return end
+
+    if active then
+        if not bv then
+            bv = Instance.new("BodyVelocity")
+            bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+            bv.P = 12500
+            bv.Velocity = Vector3.zero
+            bv.Parent = hrp
+        end
+        if not bg then
+            bg = Instance.new("BodyGyro")
+            bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+            bg.P = 12500
+            bg.CFrame = hrp.CFrame
+            bg.Parent = hrp
+        end
+
+        humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+        humanoid.PlatformStand = true
+    else
+        if bv then bv:Destroy() bv = nil end
+        if bg then bg:Destroy() bg = nil end
+        humanoid.PlatformStand = false
+        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+    end
+end
+
+----------------------------------------------------
+-- NOCLIP
+----------------------------------------------------
+local function applyNoClip(active)
+    for _, p in ipairs(horse:GetDescendants()) do
+        if p:IsA("BasePart") then
+            if active then
+                if initial.CanCollide[p] == nil then initial.CanCollide[p] = p.CanCollide end
+                p.CanCollide = false
+            else
+                if initial.CanCollide[p] ~= nil then
+                    p.CanCollide = initial.CanCollide[p]
+                else
+                    p.CanCollide = true
+                end
+            end
+        end
+    end
+end
+
+----------------------------------------------------
+-- PUBLIC FUNCTIONS
+----------------------------------------------------
+function HorseModule.ToggleFly(enabled)
+    states.Fly = enabled
+    enableFly(enabled)
+end
+
+function HorseModule.ToggleWalkSpeed(enabled)
+    states.WalkSpeedOverride = enabled
+    if humanoid then
+        if enabled then
+            humanoid.WalkSpeed = HorseModule.settings.WalkSpeed
+        else
+            humanoid.WalkSpeed = initial.WalkSpeed
+        end
+    end
+end
+
+function HorseModule.SetWalkSpeed(value)
+    HorseModule.settings.WalkSpeed = value
+    if states.WalkSpeedOverride and humanoid then
+        humanoid.WalkSpeed = value
+    end
+end
+
+function HorseModule.ToggleInfiniteJump(enabled)
+    states.InfiniteJump = enabled
+end
+
+function HorseModule.ToggleNoClip(enabled)
+    states.NoClip = enabled
+    applyNoClip(enabled)
+end
+
+function HorseModule.Cleanup()
+    HorseModule.ToggleFly(false)
+    HorseModule.ToggleWalkSpeed(false)
+    HorseModule.ToggleInfiniteJump(false)
+    HorseModule.ToggleNoClip(false)
+end
+
+----------------------------------------------------
+-- HEARTBEAT LOOP
+----------------------------------------------------
+RunService.Heartbeat:Connect(function(dt)
+    if not horse or not humanoid or not hrp then return end
+
+    -- WalkSpeed
+    if states.WalkSpeedOverride then
+        humanoid.WalkSpeed = HorseModule.settings.WalkSpeed
+    end
+
+    -- Fly (float)
+    if states.Fly and bv and bg then
+        if humanoid:GetState() ~= Enum.HumanoidStateType.Physics then
+            humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+        end
+
+        -- simple hovering motion (or static if desired)
+        bv.Velocity = Vector3.zero
+        bg.CFrame = hrp.CFrame
+    end
+
+    -- Infinite Jump
+    if states.InfiniteJump and humanoid:GetState() == Enum.HumanoidStateType.Freefall then
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+
+    -- NoClip
+    if states.NoClip or states.Fly then
+        applyNoClip(true)
+    end
+end)
+
+----------------------------------------------------
+return HorseModule
