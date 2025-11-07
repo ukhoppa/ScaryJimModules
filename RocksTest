@@ -1,45 +1,29 @@
---// Services
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local Camera = Workspace.CurrentCamera
+-- WildHorsesModule.lua
+local WildHorsesModule = {}
 
---// Player references
-local LocalPlayer = Players.LocalPlayer
-local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local hrp = char:WaitForChild("HumanoidRootPart")
-
---// Island reference
+-- Current island
 local CurrentIsland = Instance.new("StringValue")
 CurrentIsland.Name = "CurrentIsland"
 CurrentIsland.Value = "Unknown"
-CurrentIsland.Parent = LocalPlayer
+CurrentIsland.Parent = game:GetService("ReplicatedStorage") -- optional storage
 
---// Loop toggles
-local loopActive = true
-local miningActive = false
+WildHorsesModule.CurrentIsland = CurrentIsland.Value
 
---// Rock tiers
-local ROCK_TIERS = {
-    VolcanicBoulder = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(255,140,0)},
-    PrismaticGem    = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(95,189,175)},
-    MineralRock     = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(213,115,61)},
-    NormalRock      = {count = 0, rocks = {}, highlightColor = Color3.fromRGB(163,162,165)},
-}
+-- Helper: get local character
+local function getChar()
+    return game.Players.LocalPlayer and game.Players.LocalPlayer.Character
+end
 
---// Current mining target
-local CurrentTarget = nil
-
---// Detect current island
+-- Detect current island based on workspace hierarchy
 local function detectIsland()
-    local islandsFolder = Workspace:FindFirstChild("Islands")
+    local char = getChar()
+    local islandsFolder = workspace:FindFirstChild("Islands")
     if not islandsFolder then
         CurrentIsland.Value = "Unknown"
         return nil
     end
     local currentParent = char and char.Parent
-    while currentParent and currentParent ~= islandsFolder and currentParent ~= Workspace do
+    while currentParent and currentParent ~= islandsFolder and currentParent ~= workspace do
         if currentParent.Parent == islandsFolder then
             CurrentIsland.Value = currentParent.Name
             return currentParent
@@ -50,221 +34,22 @@ local function detectIsland()
     return nil
 end
 
---// Classify rocks
-local function classifyRock(model)
-    local parts = model:GetDescendants()
-    local primaryParts = {}
-    local rocksPart
-    for _, p in ipairs(parts) do
-        if p:IsA("BasePart") then
-            if p.Name == "Primary" then
-                table.insert(primaryParts, p)
-            elseif p.Name == "Rocks" then
-                rocksPart = p
-            elseif p.Name == "Rock" then
-                return "VolcanicBoulder", {p}
-            elseif tostring(p.Name):find("Rocks 2") then
-                return "NormalRock", {p}
-            end
-        end
-    end
-
-    if #primaryParts == 5 and rocksPart then
-        return "MineralRock", parts
-    elseif #primaryParts == 7 and rocksPart then
-        return "PrismaticGem", parts
-    end
-    return nil, {}
-end
-
---// Refresh rock list
-local function refreshRocks()
-    local island = detectIsland()
-    if not island then return end
-
-    for _, tier in pairs(ROCK_TIERS) do
-        tier.count = 0
-        tier.rocks = {}
-    end
-
-    for _, model in ipairs(island:GetChildren()) do
-        if model:IsA("Model") and model.Name:sub(1,1) == "{" then
-            local rockType, rockParts = classifyRock(model)
-            if rockType then
-                if not ROCK_TIERS[rockType] then continue end -- skip MineralGem
-                ROCK_TIERS[rockType].count += 1
-                table.insert(ROCK_TIERS[rockType].rocks, {model=model, parts=rockParts})
-            end
-        end
-    end
-end
-
---// Grab the best available rock
-local function grabBestRock()
-    refreshRocks()
-    local priority = {"VolcanicBoulder","PrismaticGem","MineralRock","NormalRock"}
-    for _, tierName in ipairs(priority) do
-        local tier = ROCK_TIERS[tierName]
-        if tier.count > 0 and #tier.rocks > 0 then
-            local rock = tier.rocks[1]
-            rock.tier = tierName -- store the tier name
-            return rock
-        end
-    end
-    return nil
-end
-
---// Teleport near rock
-local function tpNear(part)
-    if not miningActive or not part then return end
-
-    part.CollisionGroupId = 1
-    local direction = (hrp.Position - part.Position)
-    if direction.Magnitude == 0 then
-        direction = Vector3.new(0,3,-2)
-    end
-    local offset = direction.Unit * 5
-    hrp.CFrame = CFrame.new(part.Position + offset, part.Position)
-    Camera.CameraType = Enum.CameraType.Custom
-    Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
-end
-
---// Simulate left click
-local function leftClickPart(part)
-    if not miningActive or not part or not part.Parent then return end
-    local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-    if not onScreen then
-        hrp.CFrame = CFrame.new(hrp.Position, part.Position)
-        Camera.CameraType = Enum.CameraType.Custom
-        Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
-        task.wait(0.05)
-    end
-    screenPos = Camera:WorldToViewportPoint(part.Position)
-    VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, true, game, 0)
-    task.wait(0.1)
-    VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 0)
-end
-
---// Mining loop
+-- Update CurrentIsland every second
 task.spawn(function()
     while true do
-        if miningActive then
-            if not CurrentTarget or not (CurrentTarget.model and CurrentTarget.model.Parent) then
-                CurrentTarget = grabBestRock()
-            end
-
-            if CurrentTarget and CurrentTarget.model and CurrentTarget.model.Parent then
-                local part = CurrentTarget.parts[1]
-                if part then
-                    tpNear(part)
-                    task.wait(1)
-                    leftClickPart(part)
-
-                    local elapsed = 0
-                    while CurrentTarget.model and CurrentTarget.model.Parent and miningActive do
-                        task.wait(0.2)
-                        elapsed += 0.2
-                        if elapsed >= 150 then
-                            CurrentTarget = nil
-                            break
-                        end
-                    end
-                end
-            end
-        end
-        task.wait(0.5)
-    end
-end)
-
---// Utility: delete a folder in the current island
---// Utility: recursively delete all folders in island with a given name
-local function deleteFolderInIsland(folderName)
-    local island = detectIsland()
-    if not island then
-        warn("[Rocks] No island detected.")
-        return
-    end
-
-    -- Find all descendants named folderName that are Folders
-    local foundFolders = {}
-    local function findFolders(parent)
-        for _, child in ipairs(parent:GetChildren()) do
-            if child:IsA("Folder") and child.Name == folderName then
-                table.insert(foundFolders, child)
-            end
-            findFolders(child) -- recurse
-        end
-    end
-
-    findFolders(island)
-
-    if #foundFolders == 0 then
-        warn("[Rocks] No folders named '"..folderName.."' found in "..island.Name)
-        return
-    end
-
-    -- Destroy everything inside and then the folder itself
-    for _, folder in ipairs(foundFolders) do
-        for _, obj in ipairs(folder:GetDescendants()) do
-            obj:Destroy()
-            print("[Rocks] Destroyed:", obj:GetFullName())
-        end
-        folder:Destroy()
-        print("[Rocks] Destroyed folder:", folder:GetFullName())
-    end
-end
-
-
-
---// Auto refresh loop (when not mining)
-task.spawn(function()
-    while true do
-        if loopActive and not miningActive then
-            refreshRocks()
-        end
+        detectIsland()
+        WildHorsesModule.CurrentIsland = CurrentIsland.Value
         task.wait(1)
     end
 end)
 
---// Character respawn handling
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    char = newChar
-    hrp = newChar:WaitForChild("HumanoidRootPart")
-    detectIsland()
-end)
-
---// Public API
-local RockModule = {}
-RockModule.Tiers = ROCK_TIERS
-RockModule.GetIslandName = function() return CurrentIsland.Value end
-RockModule.Refresh = refreshRocks
-RockModule.ToggleLoop = function(state)
-    if state ~= nil then
-        loopActive = state
-    else
-        loopActive = not loopActive
-    end
-    return loopActive
-end
-RockModule.ToggleMining = function(state)
-    if state ~= nil then
-        miningActive = state
-    else
-        miningActive = not miningActive
-    end
-    return miningActive
-end
-RockModule.CurrentTarget = function()
-    return CurrentTarget
-end
--- Add to the module table
-RockModule.DeleteLava = function()
-    deleteFolderInIsland("LavaParts")
+-- Placeholder for future horse logic
+function WildHorsesModule.ScanHorses()
+    return {}
 end
 
-RockModule.DeleteTrees = function()
-    deleteFolderInIsland("Trees")
+function WildHorsesModule.OnUpdate(callback)
+    -- future updates
 end
 
-
-return RockModule
+return WildHorsesModule
