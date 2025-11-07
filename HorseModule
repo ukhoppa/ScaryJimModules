@@ -1,20 +1,36 @@
--- WildHorsesModule.lua
-
+------------------------------------------------------------
+-- 🐎 WildHorsesModule.lua
+------------------------------------------------------------
 local HorseModule = {}
 
+-- Current island
 HorseModule.CurrentIsland = "Unknown"
 
--- Table of horse info
+-- Horses table
 HorseModule.Horses = {} -- { {instance=Model, breed="Breed1", colour="Red", mane="Black", tail="White"} }
 
--- Function to detect current island
+-- Callbacks for updates
+HorseModule._callbacks = {}
+function HorseModule.OnUpdate(func)
+    table.insert(HorseModule._callbacks, func)
+end
+
+function HorseModule.TriggerUpdate()
+    for _, f in ipairs(HorseModule._callbacks) do
+        pcall(f, HorseModule.Horses)
+    end
+end
+
+-- Detect current island
 function HorseModule.DetectIsland()
-    local char = game.Players.LocalPlayer.Character
+    local player = game.Players.LocalPlayer
+    local char = player.Character or player.CharacterAdded:Wait()
     local islandsFolder = workspace:FindFirstChild("Islands")
     if not islandsFolder or not char then
         HorseModule.CurrentIsland = "Unknown"
         return nil
     end
+
     local currentParent = char.Parent
     while currentParent and currentParent ~= islandsFolder and currentParent ~= workspace do
         if currentParent.Parent == islandsFolder then
@@ -23,28 +39,51 @@ function HorseModule.DetectIsland()
         end
         currentParent = currentParent.Parent
     end
+
     HorseModule.CurrentIsland = "Unknown"
     return nil
 end
 
--- Empty scan function for now
+-- Scan horses in current island
 function HorseModule.ScanHorses()
-    HorseModule.DetectIsland()
-    -- Just return empty table for now
-    return HorseModule.Horses
-end
-
--- Update callback table
-HorseModule._callbacks = {}
-function HorseModule.OnUpdate(func)
-    table.insert(HorseModule._callbacks, func)
-end
-
--- Call update
-function HorseModule.TriggerUpdate()
-    for _, f in ipairs(HorseModule._callbacks) do
-        f(HorseModule.Horses)
+    local horses = {}
+    local island = HorseModule.DetectIsland()
+    if not island then
+        print("[HorseModule] No island detected")
+        HorseModule.Horses = horses
+        HorseModule.TriggerUpdate()
+        return horses
     end
+
+    for _, model in ipairs(island:GetChildren()) do
+        if model:IsA("Model") and
+           model:FindFirstChild("HumanoidRootPart") and
+           model:FindFirstChild("Body") and
+           model:FindFirstChild("maneMesh") and
+           model:FindFirstChild("tailMesh") and
+           model:FindFirstChild("OverheadPart") then
+
+            local overhead = model.OverheadPart:FindFirstChild("Overhead")
+            if overhead and overhead:FindFirstChild("NameLabel") and overhead.NameLabel.Text == "Wild" then
+                local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
+                local colour = model.Body.Color.Name or "Unknown"
+                local mane = model.maneMesh.Color.Name or "Unknown"
+                local tail = model.tailMesh.Color.Name or "Unknown"
+
+                table.insert(horses, {
+                    instance = model,
+                    breed = breed,
+                    colour = colour,
+                    mane = mane,
+                    tail = tail
+                })
+            end
+        end
+    end
+
+    HorseModule.Horses = horses
+    HorseModule.TriggerUpdate()
+    return horses
 end
 
 return HorseModule
