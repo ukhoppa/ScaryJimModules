@@ -1,12 +1,25 @@
--- HauntedIsland Module (first-found loop)
+-- HauntedIsland Module (robust first-found loop)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
-local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local hrp = char:WaitForChild("HumanoidRootPart")
+
+-- 🧍‍♂️ Wait for character and HRP safely
+local function getCharacterHRP()
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart", 5)
+    if not hrp then
+        warn("HumanoidRootPart not found!")
+        return nil, nil
+    end
+    return char, hrp
+end
+
+local char, hrp = getCharacterHRP()
+if not hrp then return end
+
 local cam = Workspace.CurrentCamera
 
 local HauntedModule = {}
@@ -15,15 +28,35 @@ local HauntedModule = {}
 HauntedModule.TARGET_COLOR = Color3.fromRGB(164, 255, 172)
 HauntedModule.OFFSET_DISTANCE = 5
 HauntedModule.loopActive = false
+HauntedModule.COLOR_TOLERANCE = 0.01
+
+-- Compare Color3 approximately
+local function isSameColor(c1, c2, tol)
+    tol = tol or HauntedModule.COLOR_TOLERANCE
+    return math.abs(c1.R - c2.R) < tol
+       and math.abs(c1.G - c2.G) < tol
+       and math.abs(c1.B - c2.B) < tol
+end
 
 -- Find all valid targets
 local function getTargets()
-    local island = Workspace:WaitForChild("Islands"):WaitForChild("Haunted Island")
+    local islandsFolder = Workspace:FindFirstChild("Islands")
+    if not islandsFolder then
+        warn("Islands folder not found in Workspace!")
+        return {}
+    end
+
+    local island = islandsFolder:FindFirstChild("Haunted Island")
+    if not island then
+        warn("Haunted Island not found!")
+        return {}
+    end
+
     local targets = {}
     for _, obj in ipairs(island:GetChildren()) do
         if obj:IsA("Model") then
             local part = obj:FindFirstChild("InteractionPart")
-            if part and part:IsA("BasePart") and part.Color == HauntedModule.TARGET_COLOR then
+            if part and part:IsA("BasePart") and isSameColor(part.Color, HauntedModule.TARGET_COLOR) then
                 table.insert(targets, obj)
             end
         end
@@ -35,9 +68,15 @@ end
 local function tpAndFace(model)
     local part = model:FindFirstChild("InteractionPart")
     if not part then return end
+    if not hrp then
+        char, hrp = getCharacterHRP()
+        if not hrp then return end
+    end
+
     local direction = (hrp.Position - part.Position).Unit
     local offsetPos = part.Position + direction * HauntedModule.OFFSET_DISTANCE
     hrp.CFrame = CFrame.new(offsetPos, part.Position)
+
     cam.CameraType = Enum.CameraType.Custom
     cam.CFrame = CFrame.new(hrp.Position + Vector3.new(0,2,0), part.Position)
 end
