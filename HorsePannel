@@ -171,7 +171,7 @@ function refreshHorseList()
 	local horses = getWildHorses()
 
 	-- Keywords to prioritize
-	local priorityKeywords = {"underworld", "neon", "ghost", "kelpie", "mummy"}
+	local priorityKeywords = {"cracked", "snowcap", "icey", "cactus", "flower", "spiral", "twist"}
 
 	-- Separate priority and regular horses
 	local priorityHorses = {}
