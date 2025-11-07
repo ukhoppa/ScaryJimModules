@@ -151,6 +151,14 @@ local function getWildHorses()
 	return wildHorses
 end
 
+local function playBeep()
+	local sound = Instance.new("Sound")
+	sound.SoundId = "rbxassetid://9118823104" -- simple beep sound (replace with any ID)
+	sound.Volume = 3
+	sound.PlayOnRemove = true
+	sound.Parent = Workspace
+	sound:Destroy() -- auto plays once and cleans up
+end
 -- 🧾 Populate horse list
 function refreshHorseList()
 	for _, child in ipairs(HorseFrame:GetChildren()) do
@@ -169,15 +177,18 @@ function refreshHorseList()
 	local priorityHorses = {}
 	local regularHorses = {}
 
-	for _, info in ipairs(horses) do
-		local combined = string.lower(info.breed .. " " .. info.colour .. " " .. info.mane .. " " .. info.tail)
-		local isPriority = false
-		for _, kw in ipairs(priorityKeywords) do
-			if string.find(combined, kw) then
-				isPriority = true
-				break
-			end
+for _, info in ipairs(horses) do
+	local combined = string.lower(info.breed .. " " .. info.colour .. " " .. info.mane .. " " .. info.tail)
+	local isPriority = false
+	for _, kw in ipairs(priorityKeywords) do
+		if string.find(combined, kw) then
+			isPriority = true
+			playBeep()
+			playBeep()-- 🔊 play beep for special horse
+			break
 		end
+	end
+
 
 		if isPriority then
 			table.insert(priorityHorses, info)
