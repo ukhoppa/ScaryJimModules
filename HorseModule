@@ -1,75 +1,108 @@
 -- WildHorsesModule.lua
--- Minimal empty module with auto-island detection
-
 local WildHorsesModule = {}
 
--- Table to hold horses {Instance, Breed, Colour, Mane, Tail}
-WildHorsesModule.Horses = {}
+-- Current island
+local CurrentIsland = Instance.new("StringValue")
+CurrentIsland.Name = "CurrentIsland"
+CurrentIsland.Value = "Unknown"
+CurrentIsland.Parent = game:GetService("ReplicatedStorage") -- optional storage
 
--- Current island name
-WildHorsesModule.CurrentIsland = "Unknown"
+WildHorsesModule.CurrentIsland = CurrentIsland.Value
 
--- Function: detect the current island
-function WildHorsesModule.DetectIsland()
-    local player = game.Players.LocalPlayer
-    local character = player.Character
-    if character and character:FindFirstChild("HumanoidRootPart") then
-        local pos = character.HumanoidRootPart.Position
-        -- Simple example: detect island by coordinates
-        -- Replace with your own coordinates or region checks
-        if pos.Y > 50 then
-            WildHorsesModule.CurrentIsland = "Haunted Island"
-        elseif pos.X > 500 then
-            WildHorsesModule.CurrentIsland = "Volcanic Island"
-        else
-            WildHorsesModule.CurrentIsland = "Main Island"
-        end
-    end
-    return WildHorsesModule.CurrentIsland
+-- Helper: get local character
+local function getChar()
+    return game.Players.LocalPlayer and game.Players.LocalPlayer.Character
 end
 
--- Function: scan for horses
+-- Detect current island based on workspace hierarchy
+local function detectIsland()
+    local char = getChar()
+    local islandsFolder = workspace:FindFirstChild("Islands")
+    if not islandsFolder then
+        CurrentIsland.Value = "Unknown"
+        return nil
+    end
+    local currentParent = char and char.Parent
+    while currentParent and currentParent ~= islandsFolder and currentParent ~= workspace do
+        if currentParent.Parent == islandsFolder then
+            CurrentIsland.Value = currentParent.Name
+            return currentParent
+        end
+        currentParent = currentParent.Parent
+    end
+    CurrentIsland.Value = "Unknown"
+    return nil
+end
+
+-- Update CurrentIsland every second
+task.spawn(function()
+    while true do
+        detectIsland()
+        WildHorsesModule.CurrentIsland = CurrentIsland.Value
+        task.wait(1)
+    end
+end)
+
+--[[ 
+    Scan horses on the current island.
+    Criteria:
+    - Must have HumanoidRootPart, Body, maneMesh, tailMesh, OverheadPart
+    - OverheadPart.Overhead.NameLabel.Text == "Wild"
+]]
 function WildHorsesModule.ScanHorses()
-    local horsesFolder = workspace:FindFirstChild("Horses") -- adjust if horses are elsewhere
     local horses = {}
-    if horsesFolder then
-        for _, horse in ipairs(horsesFolder:GetChildren()) do
-            if horse:IsA("Model") and horse:FindFirstChild("HumanoidRootPart") then
-                table.insert(horses, {
-                    instance = horse,
-                    breed = horse:FindFirstChild("Breed") and horse.Breed.Value or "Unknown",
-                    colour = horse:FindFirstChild("Color") and horse.Color.Value or "Unknown",
-                    mane = horse:FindFirstChild("Mane") and horse.Mane.Value or "Unknown",
-                    tail = horse:FindFirstChild("Tail") and horse.Tail.Value or "Unknown"
-                })
+    local islandsFolder = workspace:FindFirstChild("Islands")
+    local island = detectIsland()
+    if not islandsFolder or not island then return horses end
+
+    for _, model in ipairs(island:GetChildren()) do
+        if model:IsA("Model") and
+           model:FindFirstChild("HumanoidRootPart") and
+           model:FindFirstChild("Body") and
+           model:FindFirstChild("maneMesh") and
+           model:FindFirstChild("tailMesh") and
+           model:FindFirstChild("OverheadPart") 
+        then
+            local overhead = model.OverheadPart:FindFirstChild("Overhead")
+            if overhead and overhead:FindFirstChild("NameLabel") then
+                local status = overhead.NameLabel:FindFirstChild("Text") and overhead.NameLabel.Text or overhead.NameLabel.Text
+                if status == "Wild" then
+                    -- Get breed if available
+                    local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
+                    table.insert(horses, {
+                        instance = model,
+                        breed = breed,
+                        colour = model.Body and model.Body.Color and tostring(model.Body.Color) or "Unknown",
+                        mane = model.maneMesh and model.maneMesh.Texture or "Unknown",
+                        tail = model.tailMesh and model.tailMesh.Texture or "Unknown",
+                    })
+                end
             end
         end
     end
-    WildHorsesModule.Horses = horses
+
     return horses
 end
 
--- Event system (simple)
-WildHorsesModule.OnUpdate = function(callback)
-    WildHorsesModule._UpdateCallback = callback
+-- Event callback for updates
+WildHorsesModule._callbacks = {}
+function WildHorsesModule.OnUpdate(callback)
+    table.insert(WildHorsesModule._callbacks, callback)
 end
 
--- Internal function to fire update
-function WildHorsesModule.FireUpdate()
-    if WildHorsesModule._UpdateCallback then
-        pcall(function()
-            WildHorsesModule._UpdateCallback(WildHorsesModule.Horses)
-        end)
-    end
-end
-
--- Auto-scan loop
-spawn(function()
+-- Automatically call callbacks every second when horses change
+task.spawn(function()
+    local lastHorses = {}
     while true do
-        WildHorsesModule.DetectIsland()
-        WildHorsesModule.ScanHorses()
-        WildHorsesModule.FireUpdate()
-        task.wait(2) -- scan every 2 seconds
+        local newHorses = WildHorsesModule.ScanHorses()
+        -- Simple comparison by count, could enhance later
+        if #newHorses ~= #lastHorses then
+            for _, cb in ipairs(WildHorsesModule._callbacks) do
+                pcall(cb, newHorses)
+            end
+            lastHorses = newHorses
+        end
+        task.wait(1)
     end
 end)
 
