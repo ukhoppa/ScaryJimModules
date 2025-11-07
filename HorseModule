@@ -1,59 +1,76 @@
-------------------------------------------------------------
--- HorseModule (RockModule-style)
-------------------------------------------------------------
-local HorseModule = {}
+-- WildHorsesModule.lua
+-- Minimal empty module with auto-island detection
 
--- Storage
-HorseModule.Tiers = {}       -- Not used like RockModule but keeps API similar
-HorseModule.Horses = {}      -- All horses on the current island
-HorseModule.UpdateListeners = {}
+local WildHorsesModule = {}
 
--- Helper: Scan all horses in the workspace
-function HorseModule.ScanHorses()
-    local horses = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
-            local horseData = {
-                instance = obj,
-                breed = obj:FindFirstChild("Breed") and obj.Breed.Value or "Unknown",
-                colour = obj:FindFirstChild("Color") and obj.Color.Value or "Unknown",
-                mane = obj:FindFirstChild("Mane") and obj.Mane.Value or "Unknown",
-                tail = obj:FindFirstChild("Tail") and obj.Tail.Value or "Unknown",
-            }
-            table.insert(horses, horseData)
+-- Table to hold horses {Instance, Breed, Colour, Mane, Tail}
+WildHorsesModule.Horses = {}
+
+-- Current island name
+WildHorsesModule.CurrentIsland = "Unknown"
+
+-- Function: detect the current island
+function WildHorsesModule.DetectIsland()
+    local player = game.Players.LocalPlayer
+    local character = player.Character
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        local pos = character.HumanoidRootPart.Position
+        -- Simple example: detect island by coordinates
+        -- Replace with your own coordinates or region checks
+        if pos.Y > 50 then
+            WildHorsesModule.CurrentIsland = "Haunted Island"
+        elseif pos.X > 500 then
+            WildHorsesModule.CurrentIsland = "Volcanic Island"
+        else
+            WildHorsesModule.CurrentIsland = "Main Island"
         end
     end
-    HorseModule.Horses = horses
-    HorseModule._fireUpdate()
+    return WildHorsesModule.CurrentIsland
+end
+
+-- Function: scan for horses
+function WildHorsesModule.ScanHorses()
+    local horsesFolder = workspace:FindFirstChild("Horses") -- adjust if horses are elsewhere
+    local horses = {}
+    if horsesFolder then
+        for _, horse in ipairs(horsesFolder:GetChildren()) do
+            if horse:IsA("Model") and horse:FindFirstChild("HumanoidRootPart") then
+                table.insert(horses, {
+                    instance = horse,
+                    breed = horse:FindFirstChild("Breed") and horse.Breed.Value or "Unknown",
+                    colour = horse:FindFirstChild("Color") and horse.Color.Value or "Unknown",
+                    mane = horse:FindFirstChild("Mane") and horse.Mane.Value or "Unknown",
+                    tail = horse:FindFirstChild("Tail") and horse.Tail.Value or "Unknown"
+                })
+            end
+        end
+    end
+    WildHorsesModule.Horses = horses
     return horses
 end
 
--- Internal: notify listeners
-function HorseModule._fireUpdate()
-    for _, callback in ipairs(HorseModule.UpdateListeners) do
+-- Event system (simple)
+WildHorsesModule.OnUpdate = function(callback)
+    WildHorsesModule._UpdateCallback = callback
+end
+
+-- Internal function to fire update
+function WildHorsesModule.FireUpdate()
+    if WildHorsesModule._UpdateCallback then
         pcall(function()
-            callback(HorseModule.Horses)
+            WildHorsesModule._UpdateCallback(WildHorsesModule.Horses)
         end)
     end
 end
 
--- External API: OnUpdate
-function HorseModule.OnUpdate(callback)
-    table.insert(HorseModule.UpdateListeners, callback)
-end
-
--- Optional: auto-scan loop to detect new/despawned horses
-HorseModule.AutoScan = false
-function HorseModule.ToggleAutoScan(value)
-    HorseModule.AutoScan = value
-    if value then
-        spawn(function()
-            while HorseModule.AutoScan do
-                HorseModule.ScanHorses()
-                task.wait(2) -- scan every 2 seconds
-            end
-        end)
+-- Auto-scan loop
+spawn(function()
+    while true do
+        WildHorsesModule.DetectIsland()
+        WildHorsesModule.ScanHorses()
+        WildHorsesModule.FireUpdate()
+        task.wait(2) -- scan every 2 seconds
     end
-end
+end)
 
-return HorseModule
+return WildHorsesModule
