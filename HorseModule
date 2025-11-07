@@ -1,109 +1,50 @@
 -- WildHorsesModule.lua
-local WildHorsesModule = {}
 
--- Current island
-local CurrentIsland = Instance.new("StringValue")
-CurrentIsland.Name = "CurrentIsland"
-CurrentIsland.Value = "Unknown"
-CurrentIsland.Parent = game:GetService("ReplicatedStorage") -- optional storage
+local HorseModule = {}
 
-WildHorsesModule.CurrentIsland = CurrentIsland.Value
+HorseModule.CurrentIsland = "Unknown"
 
--- Helper: get local character
-local function getChar()
-    return game.Players.LocalPlayer and game.Players.LocalPlayer.Character
-end
+-- Table of horse info
+HorseModule.Horses = {} -- { {instance=Model, breed="Breed1", colour="Red", mane="Black", tail="White"} }
 
--- Detect current island based on workspace hierarchy
-local function detectIsland()
-    local char = getChar()
+-- Function to detect current island
+function HorseModule.DetectIsland()
+    local char = game.Players.LocalPlayer.Character
     local islandsFolder = workspace:FindFirstChild("Islands")
-    if not islandsFolder then
-        CurrentIsland.Value = "Unknown"
+    if not islandsFolder or not char then
+        HorseModule.CurrentIsland = "Unknown"
         return nil
     end
-    local currentParent = char and char.Parent
+    local currentParent = char.Parent
     while currentParent and currentParent ~= islandsFolder and currentParent ~= workspace do
         if currentParent.Parent == islandsFolder then
-            CurrentIsland.Value = currentParent.Name
+            HorseModule.CurrentIsland = currentParent.Name
             return currentParent
         end
         currentParent = currentParent.Parent
     end
-    CurrentIsland.Value = "Unknown"
+    HorseModule.CurrentIsland = "Unknown"
     return nil
 end
 
--- Update CurrentIsland every second
-task.spawn(function()
-    while true do
-        detectIsland()
-        WildHorsesModule.CurrentIsland = CurrentIsland.Value
-        task.wait(1)
-    end
-end)
-
---[[ 
-    Scan horses on the current island.
-    Criteria:
-    - Must have HumanoidRootPart, Body, maneMesh, tailMesh, OverheadPart
-    - OverheadPart.Overhead.NameLabel.Text == "Wild"
-]]
-function WildHorsesModule.ScanHorses()
-    local horses = {}
-    local islandsFolder = workspace:FindFirstChild("Islands")
-    local island = detectIsland()
-    if not islandsFolder or not island then return horses end
-
-    for _, model in ipairs(island:GetChildren()) do
-        if model:IsA("Model") and
-           model:FindFirstChild("HumanoidRootPart") and
-           model:FindFirstChild("Body") and
-           model:FindFirstChild("maneMesh") and
-           model:FindFirstChild("tailMesh") and
-           model:FindFirstChild("OverheadPart") 
-        then
-            local overhead = model.OverheadPart:FindFirstChild("Overhead")
-            if overhead and overhead:FindFirstChild("NameLabel") then
-                local status = overhead.NameLabel:FindFirstChild("Text") and overhead.NameLabel.Text or overhead.NameLabel.Text
-                if status == "Wild" then
-                    -- Get breed if available
-                    local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
-                    table.insert(horses, {
-                        instance = model,
-                        breed = breed,
-                        colour = model.Body and model.Body.Color and tostring(model.Body.Color) or "Unknown",
-                        mane = model.maneMesh and model.maneMesh.Texture or "Unknown",
-                        tail = model.tailMesh and model.tailMesh.Texture or "Unknown",
-                    })
-                end
-            end
-        end
-    end
-
-    return horses
+-- Empty scan function for now
+function HorseModule.ScanHorses()
+    HorseModule.DetectIsland()
+    -- Just return empty table for now
+    return HorseModule.Horses
 end
 
--- Event callback for updates
-WildHorsesModule._callbacks = {}
-function WildHorsesModule.OnUpdate(callback)
-    table.insert(WildHorsesModule._callbacks, callback)
+-- Update callback table
+HorseModule._callbacks = {}
+function HorseModule.OnUpdate(func)
+    table.insert(HorseModule._callbacks, func)
 end
 
--- Automatically call callbacks every second when horses change
-task.spawn(function()
-    local lastHorses = {}
-    while true do
-        local newHorses = WildHorsesModule.ScanHorses()
-        -- Simple comparison by count, could enhance later
-        if #newHorses ~= #lastHorses then
-            for _, cb in ipairs(WildHorsesModule._callbacks) do
-                pcall(cb, newHorses)
-            end
-            lastHorses = newHorses
-        end
-        task.wait(1)
+-- Call update
+function HorseModule.TriggerUpdate()
+    for _, f in ipairs(HorseModule._callbacks) do
+        f(HorseModule.Horses)
     end
-end)
+end
 
-return WildHorsesModule
+return HorseModule
