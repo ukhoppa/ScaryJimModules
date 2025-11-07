@@ -1,137 +1,59 @@
---!strict
--- HorseModule.lua
-
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
-
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HRP = Character:WaitForChild("HumanoidRootPart")
-
+------------------------------------------------------------
+-- HorseModule (RockModule-style)
+------------------------------------------------------------
 local HorseModule = {}
-local CurrentIsland: Instance? = nil
-local Horses: {[string]: table} = {}
-local RefreshCallback: (({[number]: table}) -> ())? = nil
 
--- Detect current island based on character position
-local function detectIsland(): Instance?
-	if CurrentIsland and CurrentIsland.Parent then return CurrentIsland end
-	if not Character or not Workspace:FindFirstChild("Islands") then return nil end
+-- Storage
+HorseModule.Tiers = {}       -- Not used like RockModule but keeps API similar
+HorseModule.Horses = {}      -- All horses on the current island
+HorseModule.UpdateListeners = {}
 
-	local islands = Workspace.Islands
-	local parent = Character.Parent
-	while parent and parent ~= Workspace do
-		if parent.Parent == islands then
-			CurrentIsland = parent
-			return CurrentIsland
-		end
-		parent = parent.Parent
-	end
-	return nil
+-- Helper: Scan all horses in the workspace
+function HorseModule.ScanHorses()
+    local horses = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
+            local horseData = {
+                instance = obj,
+                breed = obj:FindFirstChild("Breed") and obj.Breed.Value or "Unknown",
+                colour = obj:FindFirstChild("Color") and obj.Color.Value or "Unknown",
+                mane = obj:FindFirstChild("Mane") and obj.Mane.Value or "Unknown",
+                tail = obj:FindFirstChild("Tail") and obj.Tail.Value or "Unknown",
+            }
+            table.insert(horses, horseData)
+        end
+    end
+    HorseModule.Horses = horses
+    HorseModule._fireUpdate()
+    return horses
 end
 
--- Detect special horses
-local function isSpecialHorse(info: table): boolean
-	local function containsKeyword(s: string)
-		s = s:lower()
-		return s:find("ghost") or s:find("neon") or s:find("mummy")
-	end
-	return containsKeyword(info.breed)
-		or containsKeyword(info.colour)
-		or (info.instance and containsKeyword(info.instance.Name))
+-- Internal: notify listeners
+function HorseModule._fireUpdate()
+    for _, callback in ipairs(HorseModule.UpdateListeners) do
+        pcall(function()
+            callback(HorseModule.Horses)
+        end)
+    end
 end
 
--- Scan the current island for wild horses
-local function scanHorses(): {[string]: table}
-	local island = detectIsland()
-	if not island then return {} end
-	local newHorses: {[string]: table} = {}
-
-	for _, model in ipairs(island:GetChildren()) do
-		if model:IsA("Model")
-			and model:FindFirstChild("Humanoid")
-			and model:FindFirstChild("HumanoidRootPart")
-			and model:FindFirstChild("OverheadPart") then
-
-			local overhead = model.OverheadPart:FindFirstChild("Overhead")
-			if overhead and overhead:FindFirstChild("NameLabel") and overhead.NameLabel.Text == "Wild" then
-				local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
-				local dataAttr = model:GetAttribute("data")
-				local parsedData = {}
-				if dataAttr then
-					pcall(function() parsedData = HttpService:JSONDecode(dataAttr) end)
-				end
-				local variants = parsedData.variants or {}
-				newHorses[model.Name] = {
-					instance = model,
-					breed = breed,
-					colour = variants.colour or "?",
-					mane = variants.maneColour or "?",
-					tail = variants.tailColour or "?",
-				}
-			end
-		end
-	end
-
-	Horses = newHorses
-	return Horses
+-- External API: OnUpdate
+function HorseModule.OnUpdate(callback)
+    table.insert(HorseModule.UpdateListeners, callback)
 end
 
--- Build data for GUI buttons
-local function buildButtonData(): {[number]: table}
-	local output: {[number]: table} = {}
-	for _, info in pairs(Horses) do
-		if info.instance and HRP then
-			local dist = math.floor((HRP.Position - info.instance.HumanoidRootPart.Position).Magnitude)
-			table.insert(output, {
-				Name = string.format(
-					"[Breed: %s] [Dist: %s] [Color: %s] [Mane: %s] [Tail: %s]",
-					info.breed,
-					tostring(dist),
-					info.colour,
-					info.mane,
-					info.tail
-				),
-				Color = isSpecialHorse(info) and Color3.fromRGB(180, 90, 255) or Color3.fromRGB(100, 70, 40),
-				Callback = function()
-					if HRP and info.instance and info.instance:FindFirstChild("HumanoidRootPart") then
-						Character:PivotTo(CFrame.new(info.instance.HumanoidRootPart.Position + Vector3.new(0,3,0)))
-					end
-				end,
-			})
-		end
-	end
-	return output
+-- Optional: auto-scan loop to detect new/despawned horses
+HorseModule.AutoScan = false
+function HorseModule.ToggleAutoScan(value)
+    HorseModule.AutoScan = value
+    if value then
+        spawn(function()
+            while HorseModule.AutoScan do
+                HorseModule.ScanHorses()
+                task.wait(2) -- scan every 2 seconds
+            end
+        end)
+    end
 end
-
--- Public API
-function HorseModule.ScanHorses(): {[number]: table}
-	scanHorses()
-	return buildButtonData()
-end
-
-function HorseModule.GetIslandName(): string
-	local island = detectIsland()
-	return island and island.Name or "Unknown"
-end
-
-function HorseModule.OnUpdate(callback: ({[number]: table}) -> ())
-	RefreshCallback = callback
-end
-
--- Auto-refresh loop (1 second interval)
-task.spawn(function()
-	while true do
-		scanHorses()
-		if RefreshCallback then
-			pcall(function()
-				RefreshCallback(buildButtonData())
-			end)
-		end
-		task.wait(1)
-	end
-end)
 
 return HorseModule
