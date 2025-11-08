@@ -211,28 +211,35 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 
 		if behaviour == "Riding" then
+			-- Mounted fly
 			if not horseBV then
 				horseBV = startFlyFor(targetHRP)
 			end
-			horseBV.Velocity = horseBV.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
+			horseBV.Velocity = horseBV.Velocity:Lerp(move, math.clamp(dt*10,0,1))
 
-			-- Smoothly face camera
-			local lookDir = cam.CFrame.LookVector
-			local flatDir = Vector3.new(lookDir.X, 0, lookDir.Z).Unit
-			local desiredCFrame = CFrame.lookAt(targetHRP.Position, targetHRP.Position + flatDir)
-			targetHRP.CFrame = targetHRP.CFrame:Lerp(desiredCFrame, dt * 8)
+			-- Rotate horse to face camera (flat)
+			local camDir = cam.CFrame.LookVector
+			local flatDir = Vector3.new(camDir.X,0,camDir.Z)
+			if flatDir.Magnitude > 0 then flatDir = flatDir.Unit end
+
+			local currentCF = targetHRP.CFrame
+			local targetCF = CFrame.new(currentCF.Position, currentCF.Position + flatDir)
+			local alpha = math.clamp(dt*16, 0,1)
+			targetHRP.CFrame = currentCF:Lerp(targetCF, alpha)
+
 		else
+			-- Player fly
 			if not bv then
 				bv = startFlyFor(targetHRP)
 			end
 			if not bg then
 				bg = Instance.new("BodyGyro")
-				bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+				bg.MaxTorque = Vector3.new(9e9,9e9,9e9)
 				bg.P = 12500
 				bg.CFrame = targetHRP.CFrame
 				bg.Parent = targetHRP
 			end
-			bv.Velocity = bv.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
+			bv.Velocity = bv.Velocity:Lerp(move, math.clamp(dt*10,0,1))
 			bg.CFrame = CFrame.lookAt(targetHRP.Position, targetHRP.Position + cam.CFrame.LookVector)
 		end
 	end
