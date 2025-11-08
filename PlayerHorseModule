@@ -1,57 +1,264 @@
--- Handle Fly
-if states.Fly then
-    local cam = workspace.CurrentCamera
-    local move = Vector3.zero
+-- PlayerModule.lua
+--!strict
+local PlayerModule = {}
 
-    if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
-    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0, 1, 0) end
+----------------------------------------------------
+-- SETTINGS
+----------------------------------------------------
+PlayerModule.settings = {
+	FlyEnabled = false,
+	FlySpeed = 70,
+	WalkSpeedEnabled = false,
+	WalkSpeed = 16,
+	InfiniteJump = false,
+	NoClip = false,
+}
 
-    if move.Magnitude > 0 then
-        move = move.Unit * PlayerModule.settings.FlySpeed
-    end
+PlayerModule.GUIToggles = {}
 
-    local camDir = cam.CFrame.LookVector
-    local flatDir = Vector3.new(camDir.X, 0, camDir.Z)
-    if flatDir.Magnitude > 0 then flatDir = flatDir.Unit end
+----------------------------------------------------
+-- SERVICES
+----------------------------------------------------
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
-    if behaviour == "Riding" then
-        -- ensure BV exists
-        if not horseBV then
-            horseBV = startFlyFor(targetHRP)
-        end
-        horseBV.Velocity = horseBV.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
+local player = Players.LocalPlayer
 
-        -- calculate target CFrame facing camera
-        local currentCF = targetHRP.CFrame
-        local targetCF = CFrame.lookAt(currentCF.Position, currentCF.Position + flatDir)
+----------------------------------------------------
+-- STATE
+----------------------------------------------------
+local Character, Humanoid, hrp
+local bv, bg, horseBV
+local initial = {
+	WalkSpeed = nil,
+	JumpPower = nil,
+	CanCollide = {},
+}
+local states = {
+	Fly = false,
+	WalkSpeedOverride = false,
+	InfiniteJump = false,
+	NoClip = false,
+}
 
-        -- compute lean amount from camera turn difference
-        local _, currentY = currentCF:ToEulerAnglesYXZ()
-        local _, targetY = targetCF:ToEulerAnglesYXZ()
-        local turnDiff = math.clamp(targetY - currentY, -math.rad(45), math.rad(45))
-        local leanAngle = -math.clamp(turnDiff * 1.2, -0.35, 0.35) -- radians (~20 degrees max)
+PlayerModule.LocalHorse = nil
 
-        -- smoothly rotate and tilt
-        local alpha = math.clamp(dt * 8, 0, 1)
-        local blendedCF = currentCF:Lerp(targetCF, alpha)
-        targetHRP.CFrame = blendedCF * CFrame.Angles(0, 0, leanAngle)
+----------------------------------------------------
+-- CHARACTER SETUP
+----------------------------------------------------
+local function snapshotCharacter(char)
+	if not char then return end
+	Character = char
+	Humanoid = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
+	hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
+	if Humanoid then
+		initial.WalkSpeed = Humanoid.WalkSpeed
+		initial.JumpPower = Humanoid.JumpPower
+	end
 
-    else
-        if not bv then
-            bv = startFlyFor(targetHRP)
-        end
-        if not bg then
-            bg = Instance.new("BodyGyro")
-            bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-            bg.P = 12500
-            bg.CFrame = targetHRP.CFrame
-            bg.Parent = targetHRP
-        end
-        bv.Velocity = bv.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
-        bg.CFrame = CFrame.lookAt(targetHRP.Position, targetHRP.Position + cam.CFrame.LookVector)
-    end
+	initial.CanCollide = {}
+	for _, obj in ipairs(char:GetDescendants()) do
+		if obj:IsA("BasePart") then
+			initial.CanCollide[obj] = obj.CanCollide
+		end
+	end
 end
+
+local function connectDeathListener()
+	if Humanoid then
+		Humanoid.Died:Connect(function()
+			PlayerModule.ToggleFly(false)
+			PlayerModule.ToggleWalkSpeed(false)
+			PlayerModule.ToggleInfiniteJump(false)
+			PlayerModule.ToggleNoClip(false)
+		end)
+	end
+end
+
+Players.LocalPlayer.CharacterAdded:Connect(function(newChar)
+	task.wait(0.2)
+	snapshotCharacter(newChar)
+	connectDeathListener()
+end)
+
+if player.Character then
+	snapshotCharacter(player.Character)
+	connectDeathListener()
+end
+
+----------------------------------------------------
+-- DYNAMIC HORSE FINDER
+----------------------------------------------------
+function PlayerModule.FindLocalHorse()
+	local islands = Workspace:WaitForChild("Islands"):GetChildren()
+	for _, isl in ipairs(islands) do
+		if isl:IsA("Folder") then
+			for _, model in ipairs(isl:GetChildren()) do
+				if model:IsA("Model") and model:FindFirstChild("Humanoid") then
+					local owner = model:GetAttribute("owner")
+					if owner == "JimmHoppa" then
+						PlayerModule.LocalHorse = model
+						return model
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+
+----------------------------------------------------
+-- NOCLIP
+----------------------------------------------------
+local function applyNoClip(active, target)
+	if not target then return end
+	for _, p in ipairs(target:GetDescendants()) do
+		if p:IsA("BasePart") then
+			if active then
+				p.CanCollide = false
+			elseif initial.CanCollide[p] ~= nil then
+				p.CanCollide = initial.CanCollide[p]
+			end
+		end
+	end
+end
+
+----------------------------------------------------
+-- FLY HANDLER
+----------------------------------------------------
+local function startFlyFor(targetHRP)
+	local velocity = Instance.new("BodyVelocity")
+	velocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+	velocity.P = 12500
+	velocity.Velocity = Vector3.zero
+	velocity.Parent = targetHRP
+	return velocity
+end
+
+----------------------------------------------------
+-- TOGGLES
+----------------------------------------------------
+function PlayerModule.ToggleFly(enabled)
+	states.Fly = enabled
+	if not enabled then
+		if bv then bv:Destroy() bv = nil end
+		if bg then bg:Destroy() bg = nil end
+		if horseBV then horseBV:Destroy() horseBV = nil end
+	end
+end
+
+function PlayerModule.ToggleWalkSpeed(enabled)
+	states.WalkSpeedOverride = enabled
+end
+
+function PlayerModule.SetWalkSpeed(value)
+	PlayerModule.settings.WalkSpeed = value
+end
+
+function PlayerModule.ToggleInfiniteJump(enabled)
+	states.InfiniteJump = enabled
+end
+
+function PlayerModule.ToggleNoClip(enabled)
+	states.NoClip = enabled
+end
+
+function PlayerModule.Cleanup()
+	PlayerModule.ToggleFly(false)
+	PlayerModule.ToggleWalkSpeed(false)
+	PlayerModule.ToggleInfiniteJump(false)
+	PlayerModule.ToggleNoClip(false)
+end
+
+----------------------------------------------------
+-- HEARTBEAT LOOP
+----------------------------------------------------
+RunService.Heartbeat:Connect(function(dt)
+	local horse = PlayerModule.LocalHorse or PlayerModule.FindLocalHorse()
+	local behaviour = horse and horse:GetAttribute("behaviour") or "Follower"
+
+	local targetHRP = hrp
+	local targetHumanoid = Humanoid
+	if behaviour == "Riding" and horse then
+		targetHRP = horse:FindFirstChild("HumanoidRootPart")
+		targetHumanoid = horse:FindFirstChild("Humanoid")
+	end
+	if not targetHRP or not targetHumanoid then return end
+
+	-- Handle WalkSpeed
+	if states.WalkSpeedOverride then
+		if math.abs(targetHumanoid.WalkSpeed - PlayerModule.settings.WalkSpeed) > 0.1 then
+			targetHumanoid.WalkSpeed = PlayerModule.settings.WalkSpeed
+		end
+	end
+
+	-- Handle Fly
+	if states.Fly then
+		local cam = workspace.CurrentCamera
+		local move = Vector3.zero
+
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0, 1, 0) end
+
+		if move.Magnitude > 0 then
+			move = move.Unit * PlayerModule.settings.FlySpeed
+		end
+
+		if behaviour == "Riding" then
+			if not horseBV then
+				horseBV = startFlyFor(targetHRP)
+			end
+			horseBV.Velocity = horseBV.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
+
+			-- Smoothly face camera
+			local lookDir = cam.CFrame.LookVector
+			local flatDir = Vector3.new(lookDir.X, 0, lookDir.Z).Unit
+			local desiredCFrame = CFrame.lookAt(targetHRP.Position, targetHRP.Position + flatDir)
+			targetHRP.CFrame = targetHRP.CFrame:Lerp(desiredCFrame, dt * 8)
+		else
+			if not bv then
+				bv = startFlyFor(targetHRP)
+			end
+			if not bg then
+				bg = Instance.new("BodyGyro")
+				bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+				bg.P = 12500
+				bg.CFrame = targetHRP.CFrame
+				bg.Parent = targetHRP
+			end
+			bv.Velocity = bv.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
+			bg.CFrame = CFrame.lookAt(targetHRP.Position, targetHRP.Position + cam.CFrame.LookVector)
+		end
+	end
+
+	-- Handle NoClip
+	if states.NoClip or states.Fly then
+		if behaviour == "Riding" and horse then
+			applyNoClip(true, horse)
+		else
+			applyNoClip(true, Character)
+		end
+	else
+		applyNoClip(false, Character)
+	end
+end)
+
+----------------------------------------------------
+-- INFINITE JUMP
+----------------------------------------------------
+UserInputService.JumpRequest:Connect(function()
+	if states.InfiniteJump and Humanoid then
+		Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+	end
+end)
+
+----------------------------------------------------
+-- RETURN
+----------------------------------------------------
+return PlayerModule
