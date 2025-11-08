@@ -253,6 +253,18 @@ if states.Fly then
 end
 
 
+	-- Handle NoClip
+	if states.NoClip or states.Fly then
+		if behaviour == "Riding" and horse then
+			applyNoClip(true, horse)
+		else
+			applyNoClip(true, Character)
+		end
+	else
+		applyNoClip(false, Character)
+	end
+end)
+
 ----------------------------------------------------
 -- INFINITE JUMP
 ----------------------------------------------------
