@@ -1,3 +1,4 @@
+-- PlayerModule.lua
 --!strict
 local PlayerModule = {}
 
@@ -6,13 +7,16 @@ local PlayerModule = {}
 ----------------------------------------------------
 PlayerModule.settings = {
     FlyEnabled = false,
-    FlySpeed = 70,
+    FlySpeed = 70, -- smooth fly speed
+
     WalkSpeedEnabled = false,
     WalkSpeed = 16,
+
     InfiniteJump = false,
     NoClip = false,
 }
 
+-- GUI toggle references (to be set from your main GUI script)
 PlayerModule.GUIToggles = {
     Fly = nil,
     WalkSpeed = nil,
@@ -34,12 +38,12 @@ local player = Players.LocalPlayer
 -- STATE
 ----------------------------------------------------
 local Character, Humanoid, hrp
-local horseModel, horseHumanoid, horseHRP, horseBehaviour
-local bv, bg -- for follower fly
+local bv, bg -- Player BodyVelocity / BodyGyro
+local horseBV -- Horse BodyVelocity (for Riding)
 local initial = {
     WalkSpeed = nil,
     JumpPower = nil,
-    CanCollide = {},
+    CanCollide = {}, -- original CanCollide
 }
 local states = {
     Fly = false,
@@ -48,15 +52,17 @@ local states = {
     NoClip = false,
 }
 
+-- Dynamic horse reference
+PlayerModule.LocalHorse = nil
+
 ----------------------------------------------------
--- FUNCTIONS
+-- CHARACTER SETUP
 ----------------------------------------------------
 local function snapshotCharacter(char)
     if not char then return end
     Character = char
     Humanoid = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid",5)
     hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
-
     if Humanoid then
         initial.WalkSpeed = Humanoid.WalkSpeed
         initial.JumpPower = Humanoid.JumpPower
@@ -70,86 +76,109 @@ local function snapshotCharacter(char)
     end
 end
 
+local function connectDeathListener()
+    if Humanoid then
+        Humanoid.Died:Connect(function()
+            PlayerModule.ToggleFly(false)
+            PlayerModule.ToggleWalkSpeed(false)
+            PlayerModule.ToggleInfiniteJump(false)
+            PlayerModule.ToggleNoClip(false)
+        end)
+    end
+end
+
 Players.LocalPlayer.CharacterAdded:Connect(function(newChar)
     task.wait(0.2)
     snapshotCharacter(newChar)
+    connectDeathListener()
 end)
 
 if player.Character then
     snapshotCharacter(player.Character)
+    connectDeathListener()
+end
+
+----------------------------------------------------
+-- DYNAMIC HORSE SEARCH
+----------------------------------------------------
+function PlayerModule.FindLocalHorse()
+    local islands = Workspace:WaitForChild("Islands"):GetChildren()
+    for _, isl in ipairs(islands) do
+        if isl:IsA("Folder") then
+            for _, model in ipairs(isl:GetChildren()) do
+                if model:IsA("Model") and model:FindFirstChild("Humanoid") then
+                    local owner = model:GetAttribute("owner")
+                    if owner == "JimmHoppa" then
+                        PlayerModule.LocalHorse = model
+                        return model
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+----------------------------------------------------
+-- FLY SYSTEM
+----------------------------------------------------
+local function enableFly(active, targetHRP, targetHumanoid)
+    if not targetHRP then return end
+
+    if active then
+        if targetHumanoid == Humanoid then
+            -- player fly
+            if not bv then
+                bv = Instance.new("BodyVelocity")
+                bv.MaxForce = Vector3.new(9e9,9e9,9e9)
+                bv.P = 12500
+                bv.Velocity = Vector3.zero
+                bv.Parent = targetHRP
+            end
+            if not bg then
+                bg = Instance.new("BodyGyro")
+                bg.MaxTorque = Vector3.new(9e9,9e9,9e9)
+                bg.P = 12500
+                bg.CFrame = targetHRP.CFrame
+                bg.Parent = targetHRP
+            end
+            targetHumanoid:ChangeState(Enum.HumanoidStateType.Physics)
+            targetHumanoid.PlatformStand = true
+        else
+            -- horse fly
+            if not horseBV then
+                horseBV = Instance.new("BodyVelocity")
+                horseBV.MaxForce = Vector3.new(9e9,9e9,9e9)
+                horseBV.P = 12500
+                horseBV.Velocity = Vector3.zero
+                horseBV.Parent = targetHRP
+            end
+        end
+    else
+        if bv then bv:Destroy() bv=nil end
+        if bg then bg:Destroy() bg=nil end
+        if horseBV then horseBV:Destroy() horseBV=nil end
+        if targetHumanoid then
+            targetHumanoid.PlatformStand = false
+            targetHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+    end
 end
 
 ----------------------------------------------------
 -- NOCLIP
 ----------------------------------------------------
-local function applyNoClip(targetChar, active)
-    if not targetChar then return end
-    for _, p in ipairs(targetChar:GetDescendants()) do
+local function applyNoClip(active, target)
+    if not target then return end
+    for _, p in ipairs(target:GetDescendants()) do
         if p:IsA("BasePart") then
-            if active then
-                if initial.CanCollide[p] == nil then initial.CanCollide[p] = p.CanCollide end
-                p.CanCollide = false
-            else
-                if initial.CanCollide[p] ~= nil then
-                    p.CanCollide = initial.CanCollide[p]
-                else
-                    p.CanCollide = true
-                end
-            end
+            p.CanCollide = not active and (initial.CanCollide[p] ~= nil and initial.CanCollide[p] or true) or false
         end
     end
 end
 
 ----------------------------------------------------
--- FLY
-----------------------------------------------------
-local function enableFly(targetHRP, active)
-    if not targetHRP then return end
-
-    if active then
-        if not bv then
-            bv = Instance.new("BodyVelocity")
-            bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-            bv.P = 12500
-            bv.Velocity = Vector3.zero
-            bv.Parent = targetHRP
-        end
-        if not bg then
-            bg = Instance.new("BodyGyro")
-            bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-            bg.P = 12500
-            bg.CFrame = targetHRP.CFrame
-            bg.Parent = targetHRP
-        end
-    else
-        if bv then bv:Destroy() bv = nil end
-        if bg then bg:Destroy() bg = nil end
-    end
-end
-
-----------------------------------------------------
--- WALK SPEED
-----------------------------------------------------
-local function applyWalkSpeed(targetHum)
-    if not targetHum then return end
-    if states.WalkSpeedOverride then
-        targetHum.WalkSpeed = PlayerModule.settings.WalkSpeed
-    else
-        targetHum.WalkSpeed = initial.WalkSpeed or 16
-    end
-end
-
-----------------------------------------------------
--- INFINITE JUMP
-----------------------------------------------------
-UserInputService.JumpRequest:Connect(function()
-    if states.InfiniteJump and Humanoid then
-        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-    end
-end)
-
-----------------------------------------------------
--- MODULE PUBLIC FUNCTIONS
+-- PUBLIC FUNCTIONS
 ----------------------------------------------------
 function PlayerModule.ToggleFly(enabled)
     states.Fly = enabled
@@ -157,6 +186,14 @@ end
 
 function PlayerModule.ToggleWalkSpeed(enabled)
     states.WalkSpeedOverride = enabled
+    local horse = PlayerModule.LocalHorse
+    local behaviour = horse and horse:GetAttribute("behaviour") or "Follower"
+    if behaviour == "Riding" and horse:FindFirstChild("Humanoid") then
+        local hHum = horse.Humanoid
+        hHum.WalkSpeed = enabled and PlayerModule.settings.WalkSpeed or hHum.WalkSpeed
+    elseif Humanoid then
+        Humanoid.WalkSpeed = enabled and PlayerModule.settings.WalkSpeed or initial.WalkSpeed or 16
+    end
 end
 
 function PlayerModule.SetWalkSpeed(value)
@@ -171,56 +208,43 @@ function PlayerModule.ToggleNoClip(enabled)
     states.NoClip = enabled
 end
 
-----------------------------------------------------
--- HELPER: FIND LOCAL HORSE
-----------------------------------------------------
-local function findLocalHorse()
-    local localIsland
-    for _, isl in ipairs(Workspace:WaitForChild("Islands"):GetChildren()) do
-        if isl:IsA("Folder") then
-            localIsland = isl
-            break
-        end
-    end
-    if not localIsland then return end
-
-    for _, m in ipairs(localIsland:GetChildren()) do
-        if m:IsA("Model") and m:FindFirstChildOfClass("Humanoid") then
-            local ownerAttr = m:GetAttribute("owner")
-            if ownerAttr and ownerAttr == "JimmHoppa" then
-                horseModel = m
-                horseHumanoid = m:FindFirstChildOfClass("Humanoid")
-                horseHRP = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
-                horseBehaviour = m:GetAttribute("behaviour") or "Follower"
-                break
-            end
-        end
-    end
+function PlayerModule.Cleanup()
+    PlayerModule.ToggleFly(false)
+    PlayerModule.ToggleWalkSpeed(false)
+    PlayerModule.ToggleInfiniteJump(false)
+    PlayerModule.ToggleNoClip(false)
 end
 
 ----------------------------------------------------
 -- HEARTBEAT LOOP
 ----------------------------------------------------
 RunService.Heartbeat:Connect(function(dt)
-    -- refresh horse every frame
-    findLocalHorse()
+    local horse = PlayerModule.LocalHorse or PlayerModule.FindLocalHorse()
+    local behaviour = horse and horse:GetAttribute("behaviour") or "Follower"
 
-    local targetHum, targetHRP
-    if horseBehaviour == "Riding" and horseHRP then
-        targetHRP = horseHRP
-        targetHum = horseHumanoid
+    local targetHRP, targetHumanoid
+    if behaviour == "Riding" and horse then
+        targetHRP = horse:FindFirstChild("HumanoidRootPart")
+        targetHumanoid = horse:FindFirstChild("Humanoid")
     else
         targetHRP = hrp
-        targetHum = Humanoid
+        targetHumanoid = Humanoid
     end
 
+    if not targetHRP then return end
+
     -- WalkSpeed
-    applyWalkSpeed(targetHum)
+    if states.WalkSpeedOverride then
+        if targetHumanoid then
+            targetHumanoid.WalkSpeed = PlayerModule.settings.WalkSpeed
+        end
+    end
 
     -- Fly
-    if states.Fly and targetHRP then
-        local cam = workspace.CurrentCamera
+    if states.Fly then
         local move = Vector3.zero
+        local cam = workspace.CurrentCamera
+
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
@@ -228,48 +252,46 @@ RunService.Heartbeat:Connect(function(dt)
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0,1,0) end
         if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0,1,0) end
 
-        if move.Magnitude > 0 then
-            move = move.Unit * PlayerModule.settings.FlySpeed
-        else
-            move = Vector3.zero
-        end
+        if move.Magnitude > 0 then move = move.Unit * PlayerModule.settings.FlySpeed end
 
-        if horseBehaviour == "Riding" then
-            -- Move horse manually
-            targetHRP.Velocity = move
-        else
-            -- Use BV/BG
-            if not bv or not bv.Parent then
-                bv = Instance.new("BodyVelocity")
-                bv.MaxForce = Vector3.new(9e9,9e9,9e9)
-                bv.P = 12500
-                bv.Velocity = Vector3.zero
-                bv.Parent = targetHRP
+        enableFly(true, targetHRP, targetHumanoid)
+
+        -- Smooth velocity
+        if behaviour == "Follower" and bv then
+            bv.Velocity = bv.Velocity:Lerp(move, math.clamp(dt*10,0,1))
+            if bg then
+                local camPos = cam.CFrame.Position
+                local lookDir = cam.CFrame.LookVector * Vector3.new(1,0,1)
+                if lookDir.Magnitude < 0.1 then lookDir = cam.CFrame.LookVector end
+                bg.CFrame = CFrame.new(camPos, camPos + lookDir)
             end
-            if not bg or not bg.Parent then
-                bg = Instance.new("BodyGyro")
-                bg.MaxTorque = Vector3.new(9e9,9e9,9e9)
-                bg.P = 12500
-                bg.CFrame = targetHRP.CFrame
-                bg.Parent = targetHRP
-            end
-            local smooth = math.clamp(dt*10,0,1)
-            bv.Velocity = bv.Velocity:Lerp(move, smooth)
-            local camPos = cam.CFrame.Position
-            local lookDir = cam.CFrame.LookVector*Vector3.new(1,0,1)
-            if lookDir.Magnitude < 0.1 then lookDir = cam.CFrame.LookVector end
-            bg.CFrame = CFrame.new(camPos, camPos + lookDir)
+        elseif behaviour == "Riding" and horseBV then
+            horseBV.Velocity = horseBV.Velocity:Lerp(move, math.clamp(dt*10,0,1))
         end
     else
-        -- Destroy fly BV/BG if not active
-        if bv then bv:Destroy() bv = nil end
-        if bg then bg:Destroy() bg = nil end
+        enableFly(false, targetHRP, targetHumanoid)
     end
 
     -- NoClip
-    if states.NoClip then
-        applyNoClip(targetHRP.Parent, true)
+    if states.NoClip or states.Fly then
+        if behaviour == "Follower" then
+            applyNoClip(true, Character)
+        elseif behaviour == "Riding" and horse then
+            applyNoClip(true, horse)
+        end
     end
 end)
 
+----------------------------------------------------
+-- INFINITE JUMP
+----------------------------------------------------
+UserInputService.JumpRequest:Connect(function()
+    if states.InfiniteJump and Humanoid then
+        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+----------------------------------------------------
+-- RETURN MODULE
+----------------------------------------------------
 return PlayerModule
