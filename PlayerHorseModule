@@ -226,16 +226,19 @@ if states.Fly then
         local currentCF = targetHRP.CFrame
         local targetCF = CFrame.lookAt(currentCF.Position, currentCF.Position + flatDir)
 
-        -- compute lean amount from camera turn difference
-        local _, currentY = currentCF:ToEulerAnglesYXZ()
-        local _, targetY = targetCF:ToEulerAnglesYXZ()
-        local turnDiff = math.clamp(targetY - currentY, -math.rad(45), math.rad(45))
-        local leanAngle = -math.clamp(turnDiff * 1.2, -0.35, 0.35) -- radians (~20 degrees max)
+ -- compute lean amount from camera turn difference
+local _, currentY = currentCF:ToEulerAnglesYXZ()
+local _, targetY = targetCF:ToEulerAnglesYXZ()
+local turnDiff = math.clamp(targetY - currentY, -math.rad(45), math.rad(45))
 
-        -- smoothly rotate and tilt
-        local alpha = math.clamp(dt * 8, 0, 1)
-        local blendedCF = currentCF:Lerp(targetCF, alpha)
-        targetHRP.CFrame = blendedCF * CFrame.Angles(0, 0, leanAngle)
+-- flip lean direction and halve its strength
+local leanAngle = math.clamp(turnDiff * 0.6, -0.175, 0.175) -- radians (~10 degrees max)
+
+-- smoothly rotate and tilt
+local alpha = math.clamp(dt * 8, 0, 1)
+local blendedCF = currentCF:Lerp(targetCF, alpha)
+targetHRP.CFrame = blendedCF * CFrame.Angles(0, 0, leanAngle)
+
 
     else
         if not bv then
