@@ -1,0 +1,355 @@
+--!strict
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local HttpService = game:GetService("HttpService")
+
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local connections = {}
+
+-- 🧹 Destroy old GUI
+local oldGui = PlayerGui:FindFirstChild("NonWildHorseListGUI")
+if oldGui then
+	oldGui:Destroy()
+end
+
+-- 🪶 GUI Setup
+local GUI = Instance.new("ScreenGui")
+GUI.Name = "NonWildHorseListGUI"
+GUI.Parent = PlayerGui
+GUI.ResetOnSpawn = false
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 600, 0, 480)
+Frame.Position = UDim2.new(0.5, -300, 0.5, -240)
+Frame.AnchorPoint = Vector2.new(0.5, 0.5)
+Frame.BackgroundColor3 = Color3.fromRGB(54, 57, 63)
+Frame.BorderSizePixel = 0
+Frame.Parent = GUI
+
+-- 🏝️ Island List (left sidebar)
+local IslandList = Instance.new("ScrollingFrame")
+IslandList.Size = UDim2.new(0, 180, 1, 0)
+IslandList.Position = UDim2.new(0, 0, 0, 0)
+IslandList.BackgroundColor3 = Color3.fromRGB(45, 47, 52)
+IslandList.BorderSizePixel = 0
+IslandList.CanvasSize = UDim2.new(0, 0, 0, 0)
+IslandList.ScrollBarThickness = 6
+IslandList.Parent = Frame
+
+local IslandLayout = Instance.new("UIListLayout")
+IslandLayout.SortOrder = Enum.SortOrder.LayoutOrder
+IslandLayout.Padding = UDim.new(0, 4)
+IslandLayout.Parent = IslandList
+
+-- 🐴 Horse list (main panel)
+local HorseFrame = Instance.new("ScrollingFrame")
+HorseFrame.Size = UDim2.new(1, -190, 1, -10)
+HorseFrame.Position = UDim2.new(0, 190, 0, 5)
+HorseFrame.BackgroundTransparency = 1
+HorseFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+HorseFrame.ScrollBarThickness = 6
+HorseFrame.Parent = Frame
+
+local HorseLayout = Instance.new("UIListLayout")
+HorseLayout.SortOrder = Enum.SortOrder.LayoutOrder
+HorseLayout.Padding = UDim.new(0, 4)
+HorseLayout.Parent = HorseFrame
+
+-- 💾 State
+local selectedIsland: Instance? = nil
+
+local function safeConnect(signal, func)
+	local conn = signal:Connect(func)
+	table.insert(connections, conn)
+	return conn
+end
+
+-- 🏝️ Build clickable island list
+local function buildIslandList()
+	for _, child in ipairs(IslandList:GetChildren()) do
+		if child:IsA("TextButton") then
+			child:Destroy()
+		end
+	end
+
+	for _, island in ipairs(Workspace:WaitForChild("Islands"):GetChildren()) do
+		if island:IsA("Folder") then
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, -10, 0, 30)
+			btn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+			btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+			btn.Text = "🌍 " .. island.Name
+			btn.Font = Enum.Font.SourceSansBold
+			btn.TextSize = 16
+			btn.Parent = IslandList
+
+			safeConnect(btn.MouseButton1Click, function()
+				selectedIsland = island
+				for _, other in ipairs(IslandList:GetChildren()) do
+					if other:IsA("TextButton") then
+						other.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+					end
+				end
+				btn.BackgroundColor3 = Color3.fromRGB(100, 130, 100)
+				refreshHorseList()
+			end)
+		end
+	end
+
+	task.defer(function()
+		IslandList.CanvasSize = UDim2.new(0, 0, 0, IslandLayout.AbsoluteContentSize.Y + 10)
+	end)
+end
+
+-- 🔍 Get all *wild* horses in selected island
+local function getWildHorses()
+	if not selectedIsland then return {} end
+	local wildHorses = {}
+
+	for _, horse in ipairs(selectedIsland:GetChildren()) do
+		if horse:IsA("Model")
+			and horse.Name:sub(1,1) == "{"
+			and horse:FindFirstChild("Humanoid")
+			and horse:FindFirstChild("HumanoidRootPart")
+			and horse:FindFirstChild("OverheadPart") then
+
+			local overhead = horse.OverheadPart:FindFirstChild("Overhead")
+			if overhead 
+				and overhead:FindFirstChild("NameLabel")
+				and overhead.NameLabel.Text == "Wild" then
+
+				local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
+				local dataAttr = horse:GetAttribute("data")
+				local parsedData = {}
+
+				if dataAttr then
+					pcall(function()
+						parsedData = HttpService:JSONDecode(dataAttr)
+					end)
+				end
+
+				local variants = parsedData.variants or {}
+				local colour = variants.colour or "?"
+				local mane = variants.maneColour or "?"
+				local tail = variants.tailColour or "?"
+				local hornColour = variants.hornColour or "None"
+				local hornStyle = variants.hornStyle or "None"
+
+				table.insert(wildHorses, {
+					instance = horse,
+					breed = breed,
+					colour = colour,
+					mane = mane,
+					tail = tail,
+					hornColour = hornColour,
+					hornStyle = hornStyle,
+				})
+			end
+		end
+	end
+
+	return wildHorses
+end
+
+
+local function playBeep()
+	local sound = Instance.new("Sound")
+	sound.SoundId = "rbxassetid://9118823104" -- simple beep sound (replace with any ID)
+	sound.Volume = 3
+	sound.PlayOnRemove = true
+	sound.Parent = Workspace
+	sound:Destroy() -- auto plays once and cleans up
+end
+-- 🧾 Populate horse list
+function refreshHorseList()
+	for _, child in ipairs(HorseFrame:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+
+	if not selectedIsland then return end
+	local horses = getWildHorses()
+
+	-- Keywords to prioritize
+	local priorityKeywords = {"yruskjottur","cracked", "snowcap", "icey", "cactus", "flower", "spiral", "twist"}
+
+	-- Separate priority and regular horses
+	local priorityHorses = {}
+	local regularHorses = {}
+
+for _, info in ipairs(horses) do
+	local combined = string.lower(info.breed .. " " .. info.colour .. " " .. info.mane .. " " .. info.tail .. " " .. info.hornColour .. " " .. info.hornStyle)
+
+	local isPriority = false
+	for _, kw in ipairs(priorityKeywords) do
+		if string.find(combined, kw) then
+			isPriority = true
+			playBeep()
+			playBeep()-- 🔊 play beep for special horse
+			break
+		end
+	end
+
+
+		if isPriority then
+			table.insert(priorityHorses, info)
+		else
+			table.insert(regularHorses, info)
+		end
+	end
+
+	-- Merge lists with priority first
+	local sortedHorses = {}
+	for _, info in ipairs(priorityHorses) do table.insert(sortedHorses, info) end
+	for _, info in ipairs(regularHorses) do table.insert(sortedHorses, info) end
+
+	for _, info in ipairs(sortedHorses) do
+		local horse = info.instance
+
+		-- Container frame for button + viewport
+		local container = Instance.new("Frame")
+		container.Size = UDim2.new(1, -10, 0, 100)
+		container.BackgroundTransparency = 1
+		container.Parent = HorseFrame
+
+		-- Viewport
+		local viewport = Instance.new("ViewportFrame")
+		viewport.Size = UDim2.new(0, 80, 0, 80)
+		viewport.Position = UDim2.new(0, 5, 0, 10)
+		viewport.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+		viewport.BorderSizePixel = 0
+		viewport.Parent = container
+
+		-- Clone horse for viewport
+		local horseClone = horse:Clone()
+		horseClone.Parent = viewport
+
+		-- Make sure clone has a PrimaryPart
+		if not horseClone.PrimaryPart then
+			local hrp = horseClone:FindFirstChild("HumanoidRootPart") or horseClone:FindFirstChildWhichIsA("BasePart")
+			if hrp then
+				horseClone.PrimaryPart = hrp
+			end
+		end
+
+		-- Center the model
+		local centerCFrame = horseClone.PrimaryPart and horseClone.PrimaryPart.CFrame or CFrame.new()
+		horseClone:SetPrimaryPartCFrame(CFrame.new(Vector3.new(0,0,0)))
+		horseClone:PivotTo(CFrame.new(Vector3.new(0,0,0)))
+
+		-- Camera for viewport
+		local cam = Instance.new("Camera")
+		viewport.CurrentCamera = cam
+		cam.CFrame = CFrame.new(Vector3.new(0,3,7), Vector3.new(0,1,0))
+		cam.Parent = viewport
+
+		-- Optional: make the horse slowly spin
+		local rot = 0
+		local conn
+		conn = RunService.Heartbeat:Connect(function(dt)
+			if viewport.Parent then
+				rot = rot + dt
+				horseClone:SetPrimaryPartCFrame(CFrame.Angles(0, rot, 0))
+			else
+				conn:Disconnect()
+			end
+		end)
+
+		-- Info button
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, -100, 1, -10)
+		btn.Position = UDim2.new(0, 90, 0, 5)
+		btn.BackgroundColor3 = Color3.fromRGB(100, 70, 40)
+		local combined = string.lower(info.breed .. " " .. info.colour .. " " .. info.mane .. " " .. info.tail)
+		local isPriority = false
+		for _, kw in ipairs(priorityKeywords) do
+			if string.find(combined, kw) then
+				isPriority = true
+				break
+			end
+		end
+		btn.BackgroundColor3 = isPriority and Color3.fromRGB(150, 50, 150) or Color3.fromRGB(100, 70, 40)
+		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		btn.TextWrapped = true
+		btn.TextXAlignment = Enum.TextXAlignment.Left
+		btn.RichText = true
+		btn.Font = Enum.Font.SourceSansBold
+		btn.TextSize = 14
+
+		local distance = (Character:FindFirstChild("HumanoidRootPart") and horse:FindFirstChild("HumanoidRootPart"))
+			and math.floor((Character.HumanoidRootPart.Position - horse.HumanoidRootPart.Position).Magnitude)
+			or "?"
+
+btn.Text = string.format(
+	"<b>🐎 %s</b> [Dist: %s]\n🎨 Colour: %s  🪶 Mane: %s  🪶 Tail: %s\n🦄 Horn: %s (%s)",
+	info.breed,
+	tostring(distance),
+	info.colour,
+	info.mane,
+	info.tail,
+	info.hornColour,
+	info.hornStyle
+)
+
+		btn.Parent = container
+
+		safeConnect(btn.MouseButton1Click, function()
+			if Character and Character:FindFirstChild("HumanoidRootPart") and horse:FindFirstChild("HumanoidRootPart") then
+				Character:PivotTo(CFrame.new(horse.HumanoidRootPart.Position + Vector3.new(0, 3, 0)))
+			end
+		end)
+	end
+
+	task.defer(function()
+		HorseFrame.CanvasSize = UDim2.new(0, 0, 0, HorseLayout.AbsoluteContentSize.Y + 10)
+	end)
+end
+
+
+
+-- 🧍 Character refresh on respawn
+safeConnect(Player.CharacterAdded, function(newChar)
+	Character = newChar
+	task.wait(1)
+	refreshHorseList()
+end)
+
+-- 🖱️ Draggable GUI
+local dragInput, mousePos, framePos
+Frame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragInput = input
+		mousePos = UIS:GetMouseLocation()
+		framePos = Frame.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragInput = nil
+			end
+		end)
+	end
+end)
+
+RunService.Heartbeat:Connect(function()
+	if dragInput then
+		local delta = UIS:GetMouseLocation() - mousePos
+		Frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+	end
+end)
+
+-- 🔄 Auto refresh every 2 seconds
+task.spawn(function()
+	while true do
+		refreshHorseList()
+		task.wait(2)
+	end
+end)
+
+-- 🧩 Build the island list on load
+buildIslandList()
+
+GUI.Enabled = true
