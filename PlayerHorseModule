@@ -8,7 +8,6 @@ local PlayerModule = {}
 PlayerModule.settings = {
 	FlyEnabled = false,
 	FlySpeed = 70,
-	TurnSpeed = 180, -- deg/sec when riding
 	WalkSpeedEnabled = false,
 	WalkSpeed = 16,
 	InfiniteJump = false,
@@ -32,8 +31,17 @@ local player = Players.LocalPlayer
 ----------------------------------------------------
 local Character, Humanoid, hrp
 local bv, bg, horseBV
-local initial = { WalkSpeed = nil, JumpPower = nil, CanCollide = {} }
-local states = { Fly = false, WalkSpeedOverride = false, InfiniteJump = false, NoClip = false }
+local initial = {
+	WalkSpeed = nil,
+	JumpPower = nil,
+	CanCollide = {},
+}
+local states = {
+	Fly = false,
+	WalkSpeedOverride = false,
+	InfiniteJump = false,
+	NoClip = false,
+}
 
 PlayerModule.LocalHorse = nil
 
@@ -49,6 +57,7 @@ local function snapshotCharacter(char)
 		initial.WalkSpeed = Humanoid.WalkSpeed
 		initial.JumpPower = Humanoid.JumpPower
 	end
+
 	initial.CanCollide = {}
 	for _, obj in ipairs(char:GetDescendants()) do
 		if obj:IsA("BasePart") then
@@ -184,58 +193,54 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 	end
 
-	-- FLY
+	-- Fly
 	if states.Fly then
 		local cam = workspace.CurrentCamera
 		local move = Vector3.zero
-		local strafeLeft = UserInputService:IsKeyDown(Enum.KeyCode.A)
-		local strafeRight = UserInputService:IsKeyDown(Enum.KeyCode.D)
 
 		if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
 		if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
-		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
-		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0, 1, 0) end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0,1,0) end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0,1,0) end
 
-		-- riding vs walking handling
+		if move.Magnitude > 0 then
+			move = move.Unit * PlayerModule.settings.FlySpeed
+		end
+
 		if behaviour == "Riding" then
-			if move.Magnitude > 0 then move = move.Unit * PlayerModule.settings.FlySpeed end
 			if not horseBV then horseBV = startFlyFor(targetHRP) end
-			horseBV.Velocity = horseBV.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
+			horseBV.Velocity = horseBV.Velocity:Lerp(move, math.clamp(dt*10,0,1))
 
-			-- turn horse with A/D
-			local turn = 0
-			if strafeLeft then turn -= 1 end
-			if strafeRight then turn += 1 end
-			if turn ~= 0 then
-				local yaw = math.rad(PlayerModule.settings.TurnSpeed * turn * dt)
-				targetHRP.CFrame = targetHRP.CFrame * CFrame.Angles(0, yaw, 0)
-			end
+			-- smooth rotation facing camera, NO LEAN
+			local camDir = cam.CFrame.LookVector
+			local flatDir = Vector3.new(camDir.X,0,camDir.Z)
+			if flatDir.Magnitude > 0 then flatDir = flatDir.Unit end
+			local currentCF = targetHRP.CFrame
+			local targetCF = CFrame.new(currentCF.Position, currentCF.Position + flatDir)
+			local alpha = math.clamp(dt*16,0,1)
+			targetHRP.CFrame = currentCF:Lerp(targetCF, alpha)
+
 		else
-			-- player fly
-			if strafeLeft then move -= cam.CFrame.RightVector end
-			if strafeRight then move += cam.CFrame.RightVector end
-			if move.Magnitude > 0 then move = move.Unit * PlayerModule.settings.FlySpeed end
-
 			if not bv then bv = startFlyFor(targetHRP) end
 			if not bg then
 				bg = Instance.new("BodyGyro")
-				bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+				bg.MaxTorque = Vector3.new(9e9,9e9,9e9)
 				bg.P = 12500
 				bg.CFrame = targetHRP.CFrame
 				bg.Parent = targetHRP
 			end
-
-			bv.Velocity = bv.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
+			bv.Velocity = bv.Velocity:Lerp(move, math.clamp(dt*10,0,1))
 			bg.CFrame = CFrame.lookAt(targetHRP.Position, targetHRP.Position + cam.CFrame.LookVector)
 		end
 	else
-		-- cleanup
 		if bv then bv:Destroy() bv=nil end
 		if bg then bg:Destroy() bg=nil end
 		if horseBV then horseBV:Destroy() horseBV=nil end
 	end
 
-	-- NOCLIP
+	-- NoClip
 	if states.NoClip or states.Fly then
 		if behaviour == "Riding" and horse then
 			applyNoClip(true, horse)
@@ -248,7 +253,7 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 
 ----------------------------------------------------
--- INFINITE JUMP (outside Heartbeat!)
+-- INFINITE JUMP
 ----------------------------------------------------
 UserInputService.JumpRequest:Connect(function()
 	if states.InfiniteJump and Humanoid then
