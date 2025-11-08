@@ -142,6 +142,7 @@ end
 ----------------------------------------------------
 function PlayerModule.ToggleFly(enabled)
 	states.Fly = enabled
+	PlayerModule.settings.FlyEnabled = enabled
 	if not enabled then
 		if bv then bv:Destroy() bv = nil end
 		if bg then bg:Destroy() bg = nil end
@@ -151,6 +152,7 @@ end
 
 function PlayerModule.ToggleWalkSpeed(enabled)
 	states.WalkSpeedOverride = enabled
+	PlayerModule.settings.WalkSpeedEnabled = enabled
 end
 
 function PlayerModule.SetWalkSpeed(value)
@@ -159,10 +161,12 @@ end
 
 function PlayerModule.ToggleInfiniteJump(enabled)
 	states.InfiniteJump = enabled
+	PlayerModule.settings.InfiniteJump = enabled
 end
 
 function PlayerModule.ToggleNoClip(enabled)
 	states.NoClip = enabled
+	PlayerModule.settings.NoClip = enabled
 end
 
 function PlayerModule.Cleanup()
@@ -201,26 +205,36 @@ RunService.Heartbeat:Connect(function(dt)
 
 		if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
 		if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
-		if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
-		if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
 		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0, 1, 0) end
-
-		if move.Magnitude > 0 then
-			move = move.Unit * PlayerModule.settings.FlySpeed
-		end
 
 		if behaviour == "Riding" then
 			if not horseBV then
 				horseBV = startFlyFor(targetHRP)
 			end
-			horseBV.Velocity = horseBV.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
 
-			-- Smoothly face camera
-			local lookDir = cam.CFrame.LookVector
-			local flatDir = Vector3.new(lookDir.X, 0, lookDir.Z).Unit
-			local desiredCFrame = CFrame.lookAt(targetHRP.Position, targetHRP.Position + flatDir)
-			targetHRP.CFrame = targetHRP.CFrame:Lerp(desiredCFrame, dt * 8)
+			-- Forward/backward
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+				horseBV.Velocity = horseBV.Velocity:Lerp(cam.CFrame.LookVector * PlayerModule.settings.FlySpeed, math.clamp(dt * 10, 0, 1))
+			elseif UserInputService:IsKeyDown(Enum.KeyCode.S) then
+				horseBV.Velocity = horseBV.Velocity:Lerp(-cam.CFrame.LookVector * PlayerModule.settings.FlySpeed, math.clamp(dt * 10, 0, 1))
+			else
+				horseBV.Velocity = horseBV.Velocity:Lerp(Vector3.zero, math.clamp(dt * 10, 0, 1))
+			end
+
+			-- Rotate left/right
+			local turnSpeed = dt * 4
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+				targetHRP.CFrame *= CFrame.Angles(0, turnSpeed, 0)
+			elseif UserInputService:IsKeyDown(Enum.KeyCode.D) then
+				targetHRP.CFrame *= CFrame.Angles(0, -turnSpeed, 0)
+			end
+
+			-- Always face camera forward direction (flat)
+			local flatDir = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
+			if flatDir.Magnitude > 0 then
+				targetHRP.CFrame = CFrame.new(targetHRP.Position, targetHRP.Position + flatDir)
+			end
 		else
 			if not bv then
 				bv = startFlyFor(targetHRP)
@@ -232,7 +246,20 @@ RunService.Heartbeat:Connect(function(dt)
 				bg.CFrame = targetHRP.CFrame
 				bg.Parent = targetHRP
 			end
-			bv.Velocity = bv.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
+
+			local moveVec = Vector3.zero
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVec += cam.CFrame.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVec -= cam.CFrame.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVec -= cam.CFrame.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVec += cam.CFrame.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVec += Vector3.new(0, 1, 0) end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVec -= Vector3.new(0, 1, 0) end
+
+			if moveVec.Magnitude > 0 then
+				moveVec = moveVec.Unit * PlayerModule.settings.FlySpeed
+			end
+
+			bv.Velocity = bv.Velocity:Lerp(moveVec, math.clamp(dt * 10, 0, 1))
 			bg.CFrame = CFrame.lookAt(targetHRP.Position, targetHRP.Position + cam.CFrame.LookVector)
 		end
 	end
