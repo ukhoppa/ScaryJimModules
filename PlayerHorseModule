@@ -194,75 +194,73 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 	end
 
-	-- Handle Fly
+	
 -- Handle Fly
 if states.Fly then
-    local cam = workspace.CurrentCamera
-    local move = Vector3.zero
+	local cam = workspace.CurrentCamera
+	local move = Vector3.zero
 
-    if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
-    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0, 1, 0) end
+	if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
+	if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0, 1, 0) end
 
-    if move.Magnitude > 0 then
-        move = move.Unit * PlayerModule.settings.FlySpeed
-    end
+	if move.Magnitude > 0 then
+		move = move.Unit * PlayerModule.settings.FlySpeed
+	end
 
-    local camDir = cam.CFrame.LookVector
-    local flatDir = Vector3.new(camDir.X, 0, camDir.Z)
-    if flatDir.Magnitude > 0 then flatDir = flatDir.Unit end
+	local camDir = cam.CFrame.LookVector
+	local flatDir = Vector3.new(camDir.X, 0, camDir.Z)
+	if flatDir.Magnitude > 0 then flatDir = flatDir.Unit end
 
-    if behaviour == "Riding" then
-        -- ensure BV exists
-        if not horseBV then
-            horseBV = startFlyFor(targetHRP)
-        end
-        horseBV.Velocity = horseBV.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
+	-- Determine which root part to move
+	local targetHRP = (behaviour == "Riding" and horse and horse:FindFirstChild("HumanoidRootPart"))
+		or (Character and Character:FindFirstChild("HumanoidRootPart"))
+	if not targetHRP then return end
 
-        -- calculate target CFrame facing camera
-        local currentCF = targetHRP.CFrame
-        local targetCF = CFrame.lookAt(currentCF.Position, currentCF.Position + flatDir)
+	if behaviour == "Riding" then
+		-- ensure BV exists
+		if not horseBV then
+			horseBV = startFlyFor(targetHRP)
+		end
+		horseBV.Velocity = horseBV.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
 
--- compute smooth facing direction only (no lean)
-local currentCF = targetHRP.CFrame
-local targetCF = CFrame.new(currentCF.Position, currentCF.Position + lookDir)
+		-- smooth facing direction (no lean)
+		local currentCF = targetHRP.CFrame
+		local targetCF = CFrame.new(currentCF.Position, currentCF.Position + flatDir)
+		local alpha = math.clamp(dt * 16, 0, 1) -- faster turning
+		targetHRP.CFrame = currentCF:Lerp(targetCF, alpha)
 
--- smooth the turn
-local alpha = math.clamp(dt * 8, 0, 1)
-targetHRP.CFrame = currentCF:Lerp(targetCF, alpha)
+	else
+		if not bv then
+			bv = startFlyFor(targetHRP)
+		end
+		if not bg then
+			bg = Instance.new("BodyGyro")
+			bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+			bg.P = 12500
+			bg.CFrame = targetHRP.CFrame
+			bg.Parent = targetHRP
+		end
 
-
-    else
-        if not bv then
-            bv = startFlyFor(targetHRP)
-        end
-        if not bg then
-            bg = Instance.new("BodyGyro")
-            bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-            bg.P = 12500
-            bg.CFrame = targetHRP.CFrame
-            bg.Parent = targetHRP
-        end
-        bv.Velocity = bv.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
-        bg.CFrame = CFrame.lookAt(targetHRP.Position, targetHRP.Position + cam.CFrame.LookVector)
-    end
+		bv.Velocity = bv.Velocity:Lerp(move, math.clamp(dt * 10, 0, 1))
+		bg.CFrame = CFrame.lookAt(targetHRP.Position, targetHRP.Position + cam.CFrame.LookVector)
+	end
 end
 
-
-	-- Handle NoClip
-	if states.NoClip or states.Fly then
-		if behaviour == "Riding" and horse then
-			applyNoClip(true, horse)
-		else
-			applyNoClip(true, Character)
-		end
+-- Handle NoClip
+if states.NoClip or states.Fly then
+	if behaviour == "Riding" and horse then
+		applyNoClip(true, horse)
 	else
-		applyNoClip(false, Character)
+		applyNoClip(true, Character)
 	end
-end)
+else
+	applyNoClip(false, Character)
+end
+
 
 ----------------------------------------------------
 -- INFINITE JUMP
