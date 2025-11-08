@@ -92,10 +92,8 @@ end
 -- DYNAMIC HORSE FINDER
 ----------------------------------------------------
 function PlayerModule.FindLocalHorse()
-	if PlayerModule.LocalHorse and PlayerModule.LocalHorse.Parent then
-		return PlayerModule.LocalHorse
-	end
-	for _, isl in ipairs(Workspace:WaitForChild("Islands"):GetChildren()) do
+	local islands = Workspace:WaitForChild("Islands"):GetChildren()
+	for _, isl in ipairs(islands) do
 		if isl:IsA("Folder") then
 			for _, model in ipairs(isl:GetChildren()) do
 				if model:IsA("Model") and model:FindFirstChild("Humanoid") then
@@ -112,7 +110,7 @@ function PlayerModule.FindLocalHorse()
 end
 
 ----------------------------------------------------
--- HELPERS
+-- NOCLIP
 ----------------------------------------------------
 local function applyNoClip(active, target)
 	if not target then return end
@@ -127,6 +125,9 @@ local function applyNoClip(active, target)
 	end
 end
 
+----------------------------------------------------
+-- FLY HANDLER
+----------------------------------------------------
 local function startFlyFor(targetHRP)
 	local velocity = Instance.new("BodyVelocity")
 	velocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
@@ -175,7 +176,7 @@ end
 -- HEARTBEAT LOOP
 ----------------------------------------------------
 RunService.Heartbeat:Connect(function(dt)
-	local horse = PlayerModule.FindLocalHorse()
+	local horse = PlayerModule.LocalHorse or PlayerModule.FindLocalHorse()
 	local behaviour = horse and horse:GetAttribute("behaviour") or "Follower"
 
 	local targetHRP = hrp
@@ -186,14 +187,14 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 	if not targetHRP or not targetHumanoid then return end
 
-	-- WalkSpeed
-	if states.WalkSpeedOverride and targetHumanoid then
+	-- Handle WalkSpeed
+	if states.WalkSpeedOverride then
 		if math.abs(targetHumanoid.WalkSpeed - PlayerModule.settings.WalkSpeed) > 0.1 then
 			targetHumanoid.WalkSpeed = PlayerModule.settings.WalkSpeed
 		end
 	end
 
-	-- Fly
+	-- Handle Fly
 	if states.Fly then
 		local cam = workspace.CurrentCamera
 		local move = Vector3.zero
@@ -202,28 +203,35 @@ RunService.Heartbeat:Connect(function(dt)
 		if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
 		if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
 		if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
-		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0,1,0) end
-		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0,1,0) end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0, 1, 0) end
 
 		if move.Magnitude > 0 then
 			move = move.Unit * PlayerModule.settings.FlySpeed
 		end
 
 		if behaviour == "Riding" then
-			if not horseBV then horseBV = startFlyFor(targetHRP) end
+			-- Mounted fly
+			if not horseBV then
+				horseBV = startFlyFor(targetHRP)
+			end
 			horseBV.Velocity = horseBV.Velocity:Lerp(move, math.clamp(dt*10,0,1))
 
-			-- smooth rotation facing camera, NO LEAN
+			-- Rotate horse to face camera (flat)
 			local camDir = cam.CFrame.LookVector
 			local flatDir = Vector3.new(camDir.X,0,camDir.Z)
 			if flatDir.Magnitude > 0 then flatDir = flatDir.Unit end
+
 			local currentCF = targetHRP.CFrame
 			local targetCF = CFrame.new(currentCF.Position, currentCF.Position + flatDir)
-			local alpha = math.clamp(dt*16,0,1)
+			local alpha = math.clamp(dt*16, 0,1)
 			targetHRP.CFrame = currentCF:Lerp(targetCF, alpha)
 
 		else
-			if not bv then bv = startFlyFor(targetHRP) end
+			-- Player fly
+			if not bv then
+				bv = startFlyFor(targetHRP)
+			end
 			if not bg then
 				bg = Instance.new("BodyGyro")
 				bg.MaxTorque = Vector3.new(9e9,9e9,9e9)
@@ -234,13 +242,9 @@ RunService.Heartbeat:Connect(function(dt)
 			bv.Velocity = bv.Velocity:Lerp(move, math.clamp(dt*10,0,1))
 			bg.CFrame = CFrame.lookAt(targetHRP.Position, targetHRP.Position + cam.CFrame.LookVector)
 		end
-	else
-		if bv then bv:Destroy() bv=nil end
-		if bg then bg:Destroy() bg=nil end
-		if horseBV then horseBV:Destroy() horseBV=nil end
 	end
 
-	-- NoClip
+	-- Handle NoClip
 	if states.NoClip or states.Fly then
 		if behaviour == "Riding" and horse then
 			applyNoClip(true, horse)
@@ -262,6 +266,6 @@ UserInputService.JumpRequest:Connect(function()
 end)
 
 ----------------------------------------------------
--- RETURN MODULE
+-- RETURN
 ----------------------------------------------------
 return PlayerModule
