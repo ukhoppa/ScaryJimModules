@@ -1,3 +1,4 @@
+local ServerModuleVersion = 123456
 --!strict
 -- 🐎 NonWildHorseList with Horn Priority + Fancy Buttons
 
