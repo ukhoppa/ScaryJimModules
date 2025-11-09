@@ -170,7 +170,47 @@ function refreshHorseList()
 	if not selectedIsland then return end
 	local horses = getWildHorses()
 
-	local priorityKeywords = {"yruskjottur", "cracked", "snowcap", "icey", "cactus", "flower", "spiral", "twist", "glow", "spark"}
+--	local priorityKeywords = {"yruskjottur", "cracked", "snowcap", "icey", "cactus", "flower", "spiral", "twist", "glow", "spark"}
+local priorityKeywords = {
+	"amethyst",
+	"blessed",
+	"cactus",
+	"cow",
+	"cracked",
+	"diamond",
+	"emerald",
+	"fade",
+	"flowery",
+	"glacier",
+	"glow",
+	"icey",
+	"leafy",
+	"limestone",
+	"lava",
+	"mossy",
+	"moonstone",
+	"neon",
+	"obsidian",
+	"pearly",
+	"prismatic",
+	"quartz",
+	"ruby",
+	"sandstone",
+	"sapphire",
+	"snowcap",
+	"snowy",
+	"space",
+	"spark",
+	"spiral",
+	"spot",
+	"streak",
+	"stripes",
+	"topaz",
+	"twist",
+	"volcanic",
+	"yruskjottur",
+	"zebra"
+}
 
 	local horned = {}
 	local priority = {}
