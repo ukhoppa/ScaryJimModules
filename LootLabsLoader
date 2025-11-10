@@ -1,0 +1,246 @@
+-- ===== CONFIG =====
+local EXPIRY_DATE = "2025-11-11" -- YYYY-MM-DD, set to your daily update date
+local LOOTLABS_LINK = "https://lootlabs.com/"
+local SECRET_KEY = "MySecretKey" -- update daily
+
+-- ===== DATE CHECK =====
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+
+if Player then
+    local PlayerGui = Player:WaitForChild("PlayerGui")
+
+    local year, month, day = string.match(EXPIRY_DATE, "(%d+)-(%d+)-(%d+)")
+    year, month, day = tonumber(year), tonumber(month), tonumber(day)
+
+    local today = os.date("*t")
+    local expired = (today.year > year) 
+                 or (today.year == year and today.month > month) 
+                 or (today.year == year and today.month == month and today.day > day)
+
+    if expired then
+        -- Out-of-date GUI
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "VersionOutOfDate"
+        gui.ResetOnSpawn = false
+        gui.Parent = PlayerGui
+
+        local frame = Instance.new("Frame", gui)
+        frame.Size = UDim2.new(0, 420, 0, 160)
+        frame.Position = UDim2.new(0.5, -210, 0.5, -80)
+        frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        frame.BorderSizePixel = 0
+
+        local corner = Instance.new("UICorner", frame)
+        corner.CornerRadius = UDim.new(0, 10)
+
+        local label = Instance.new("TextLabel", frame)
+        label.Size = UDim2.new(1, -20, 1, -20)
+        label.Position = UDim2.new(0, 10, 0, 10)
+        label.BackgroundTransparency = 1
+        label.TextWrapped = true
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 18
+        label.TextColor3 = Color3.fromRGB(255, 120, 120)
+        label.Text = "⚠️ Your script is out of date!\n\nPlease download the latest version from LootLabs.\n\nLink copied to clipboard."
+
+        setclipboard(LOOTLABS_LINK)
+        return -- stop loading further
+    end
+end
+
+-- ===== SCARYJIMPASS GUI =====
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local UserInputService = game:GetService("UserInputService")
+
+-- Cleanup old GUI
+local oldGui = PlayerGui:FindFirstChild("ScaryJimPass")
+if oldGui then oldGui:Destroy() end
+
+local GUI = Instance.new("ScreenGui")
+GUI.Name = "ScaryJimPass"
+GUI.ResetOnSpawn = false
+GUI.Parent = PlayerGui
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 480, 0, 220)
+Frame.Position = UDim2.new(0, 16, 0, 16)
+Frame.BackgroundColor3 = Color3.fromRGB(34, 34, 34)
+Frame.BorderSizePixel = 0
+Frame.Parent = GUI
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = Frame
+
+-- ===== DRAG LOGIC =====
+local dragging, dragInput, dragStart, startPos
+Frame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = input.Position
+		startPos = Frame.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then dragging = false end
+		end)
+	end
+end)
+Frame.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and input == dragInput then
+		local delta = input.Position - dragStart
+		Frame.Position = UDim2.new(
+			startPos.X.Scale, startPos.X.Offset + delta.X,
+			startPos.Y.Scale, startPos.Y.Offset + delta.Y
+		)
+	end
+end)
+
+-- ===== LEFT PANEL =====
+local Left = Instance.new("Frame")
+Left.Size = UDim2.new(0, 200, 1, -20)
+Left.Position = UDim2.new(0, 10, 0, 10)
+Left.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+Left.BorderSizePixel = 0
+Left.Parent = Frame
+
+local UICornerLeft = Instance.new("UICorner")
+UICornerLeft.CornerRadius = UDim.new(0, 8)
+UICornerLeft.Parent = Left
+
+local viewport = Instance.new("ViewportFrame")
+viewport.Size = UDim2.new(1, -20, 1, -20)
+viewport.Position = UDim2.new(0, 10, 0, 10)
+viewport.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+viewport.BorderSizePixel = 0
+viewport.Parent = Left
+
+local cam = Instance.new("Camera")
+cam.Parent = viewport
+viewport.CurrentCamera = cam
+
+if Player.Character then
+	local cloneCharacter = Player.Character:Clone()
+	cloneCharacter.Parent = viewport
+	cloneCharacter:PivotTo(CFrame.new(0,0,0))
+	if not cloneCharacter.PrimaryPart then
+		local hrp = cloneCharacter:FindFirstChild("HumanoidRootPart") or cloneCharacter:FindFirstChildWhichIsA("BasePart")
+		if hrp then cloneCharacter.PrimaryPart = hrp end
+	end
+	if cloneCharacter.PrimaryPart then
+		local frontOffset = Vector3.new(0, 2, -5)
+		cam.CFrame = CFrame.new(cloneCharacter.PrimaryPart.Position + frontOffset, cloneCharacter.PrimaryPart.Position + Vector3.new(0,1,0))
+	end
+end
+
+-- ===== RIGHT PANEL =====
+local Right = Instance.new("Frame")
+Right.Size = UDim2.new(1, -230, 1, -20)
+Right.Position = UDim2.new(0, 220, 0, 10)
+Right.BackgroundTransparency = 1
+Right.Parent = Frame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -20, 0, 36)
+Title.Position = UDim2.new(0, 10, 0, 6)
+Title.BackgroundTransparency = 1
+Title.Text = "ScaryJim Pass"
+Title.Font = Enum.Font.GothamSemibold
+Title.TextSize = 20
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Right
+
+local Msg = Instance.new("TextLabel")
+Msg.Size = UDim2.new(1, -20, 0, 48)
+Msg.Position = UDim2.new(0, 10, 0, 46)
+Msg.BackgroundTransparency = 1
+Msg.Text = "Enter your access key to continue."
+Msg.Font = Enum.Font.Gotham
+Msg.TextSize = 14
+Msg.TextColor3 = Color3.fromRGB(180, 180, 180)
+Msg.TextWrapped = true
+Msg.TextXAlignment = Enum.TextXAlignment.Left
+Msg.Parent = Right
+
+local InputBox = Instance.new("TextBox")
+InputBox.Size = UDim2.new(1, -120, 0, 28)
+InputBox.Position = UDim2.new(0, 10, 0, 110)
+InputBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+InputBox.BorderSizePixel = 0
+InputBox.PlaceholderText = "Enter access key..."
+InputBox.Font = Enum.Font.Gotham
+InputBox.TextSize = 16
+InputBox.TextColor3 = Color3.fromRGB(255,255,255)
+InputBox.TextXAlignment = Enum.TextXAlignment.Left
+InputBox.ClipsDescendants = true
+InputBox.Parent = Right
+
+local UICornerInput = Instance.new("UICorner")
+UICornerInput.CornerRadius = UDim.new(0,6)
+UICornerInput.Parent = InputBox
+
+local Submit = Instance.new("TextButton")
+Submit.Size = UDim2.new(0, 100, 0, 28)
+Submit.Position = UDim2.new(1, -110, 0, 110)
+Submit.BackgroundColor3 = Color3.fromRGB(35,130,255)
+Submit.BorderSizePixel = 0
+Submit.Font = Enum.Font.GothamSemibold
+Submit.TextSize = 14
+Submit.TextColor3 = Color3.fromRGB(255,255,255)
+Submit.Text = "Submit"
+Submit.Parent = Right
+
+local UICornerSubmit = Instance.new("UICorner")
+UICornerSubmit.CornerRadius = UDim.new(0,6)
+UICornerSubmit.Parent = Submit
+
+local Feedback = Instance.new("TextLabel")
+Feedback.Size = UDim2.new(1, -20, 0, 20)
+Feedback.Position = UDim2.new(0, 10, 0, 150)
+Feedback.BackgroundTransparency = 1
+Feedback.Text = ""
+Feedback.Font = Enum.Font.Gotham
+Feedback.TextSize = 14
+Feedback.TextColor3 = Color3.fromRGB(255,80,80)
+Feedback.TextXAlignment = Enum.TextXAlignment.Left
+Feedback.Parent = Right
+
+-- ===== SUBMIT CALLBACK =====
+Submit.MouseButton1Click:Connect(function()
+	local key = InputBox.Text
+	if key == SECRET_KEY then
+		Feedback.TextColor3 = Color3.fromRGB(80,255,100)
+		Feedback.Text = "Access granted!"
+		task.wait(0.5)
+		loadstring(game:HttpGet("https://raw.githubusercontent.com/ukhoppa/ScaryJimModules/refs/heads/main/LootLabs"))()
+		GUI:Destroy()
+	else
+		Feedback.TextColor3 = Color3.fromRGB(255,80,80)
+		Feedback.Text = "Invalid key, try again."
+	end
+end)
+
+-- ===== LootLabs Button =====
+local LootButton = Instance.new("TextButton")
+LootButton.Size = UDim2.new(0, 150, 0, 28)
+LootButton.Position = UDim2.new(0, 10, 0, 180)
+LootButton.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
+LootButton.BorderSizePixel = 0
+LootButton.Font = Enum.Font.GothamSemibold
+LootButton.TextSize = 14
+LootButton.TextColor3 = Color3.fromRGB(255,255,255)
+LootButton.Text = "Copy LootLabs Link"
+LootButton.Parent = Right
+
+local UICornerLoot = Instance.new("UICorner")
+UICornerLoot.CornerRadius = UDim.new(0,6)
+UICornerLoot.Parent = LootButton
+
+LootButton.MouseButton1Click:Connect(function()
+	setclipboard(LOOTLABS_LINK)
+	Feedback.TextColor3 = Color3.fromRGB(80,255,100)
+	Feedback.Text = "LootLabs link copied to clipboard!"
+end)
