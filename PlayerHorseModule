@@ -286,6 +286,41 @@ UserInputService.JumpRequest:Connect(function()
 end)
 
 ----------------------------------------------------
+-- SHRINE MUSIC CONTROL
+----------------------------------------------------
+local SoundService = game:GetService("SoundService")
+local shrineSound
+
+function PlayerModule.PlayShrineMusic()
+	if shrineSound and shrineSound.Parent then
+		-- Already playing
+		if not shrineSound.Playing then
+			shrineSound.Playing = true
+		end
+		return
+	end
+
+	shrineSound = Instance.new("Sound")
+	shrineSound.Name = "ShrineTrack"
+	shrineSound.SoundId = "rbxassetid://9043981741"
+	shrineSound.Volume = 1 -- Roblox max volume is 1, not 100
+	shrineSound.Looped = true
+	shrineSound.Parent = SoundService
+	shrineSound:Play()
+
+	print("[ShrineMusic] Started shrine track.")
+end
+
+function PlayerModule.StopShrineMusic()
+	if shrineSound then
+		shrineSound:Stop()
+		shrineSound:Destroy()
+		shrineSound = nil
+		print("[ShrineMusic] Stopped and removed shrine track.")
+	end
+end
+
+----------------------------------------------------
 -- REPLACE HUMANOID
 ----------------------------------------------------
 function PlayerModule.ReplaceHumanoid()
