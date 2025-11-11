@@ -194,6 +194,17 @@ local function deleteFolderInIsland(folderName)
 	end
 end
 
+
+------------------------------------------------------------
+-- Background island updater
+------------------------------------------------------------
+task.spawn(function()
+	while true do
+		detectIsland()
+		task.wait(1)
+	end
+end)
+
 ------------------------------------------------------------
 -- Public API
 ------------------------------------------------------------
