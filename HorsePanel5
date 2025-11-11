@@ -34,45 +34,56 @@ Frame.Parent = GUI
 -- OtherIslands Button Alerts
 ------------------------------------------------------------
 local priorityKeywords = {
-    "amethyst","blessed","cactus","cow","cracked","diamond","emerald",
-    "fade","flowery","glacier","glow","icey","leafy","limestone","lava",
-    "mossy","moonstone","neon","obsidian","pearly","prismatic","quartz",
-    "ruby","sandstone","sapphire","snowcap","snowy","space","spark","spiral",
-    "spot","streak","stripes","topaz","twist","volcanic","yruskjottur","zebra"
+	"amethyst","blessed","cactus","cow","cracked","diamond","emerald",
+	"fade","flowery","glacier","glow","icey","leafy","limestone","lava",
+	"mossy","moonstone","neon","obsidian","pearly","prismatic","quartz",
+	"ruby","sandstone","sapphire","snowcap","snowy","space","spark","spiral",
+	"spot","streak","stripes","topaz","twist","volcanic","yruskjottur","zebra"
 }
 
 local function islandHasPriorityHorses(island)
-    for _, horse in ipairs(island:GetChildren()) do
-        if horse:IsA("Model") and horse:FindFirstChild("Humanoid") and horse:FindFirstChild("HumanoidRootPart") and horse:FindFirstChild("OverheadPart") then
-            local overhead = horse.OverheadPart:FindFirstChild("Overhead")
-            if overhead and overhead:FindFirstChild("NameLabel") and overhead.NameLabel.Text == "Wild" then
-                local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
-                local dataAttr = horse:GetAttribute("data")
-                local parsedData = {}
-                if dataAttr then
-                    pcall(function() parsedData = HttpService:JSONDecode(dataAttr) end)
-                end
-                local variants = parsedData.variants or {}
-                local colour = variants.colour or "?"
-                local hornStyle = variants.hornStyle or "None"
-                local hornColour = variants.hornColour or "None"
-                local combined = (breed .. " " .. colour .. " " .. hornStyle .. " " .. hornColour):lower()
-                local isHorned = (hornStyle ~= "None" and hornStyle ~= "")
-                local isPriority = false
-                for _, kw in ipairs(priorityKeywords) do
-                    if string.find(combined, kw) then
-                        isPriority = true
-                        break
-                    end
-                end
-                if isHorned or isPriority then
-                    return true
-                end
-            end
-        end
-    end
-    return false
+	for _, horse in ipairs(island:GetChildren()) do
+		if horse:IsA("Model")
+			and horse:FindFirstChild("Humanoid")
+			and horse:FindFirstChild("HumanoidRootPart")
+			and horse:FindFirstChild("OverheadPart") then
+
+			local overhead = horse.OverheadPart:FindFirstChild("Overhead")
+			if overhead and overhead:FindFirstChild("NameLabel") and overhead.NameLabel.Text == "Wild" then
+				local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
+				local dataAttr = horse:GetAttribute("data")
+				local parsedData = {}
+
+				if dataAttr then
+					pcall(function()
+						parsedData = HttpService:JSONDecode(dataAttr)
+					end)
+				end
+
+				local variants = parsedData.variants or {}
+				local colour = variants.colour or "?"
+				local hornStyle = variants.hornStyle or "None"
+				local hornColour = variants.hornColour or "None"
+
+				local combined = (breed .. " " .. colour .. " " .. hornStyle .. " " .. hornColour):lower()
+				local isHorned = (hornStyle ~= "None" and hornStyle ~= "")
+				local isPriority = false
+				for _, kw in ipairs(priorityKeywords) do
+					if string.find(combined, kw) then
+						isPriority = true
+						break
+					end
+				end
+
+				if isHorned or isPriority then
+					return true
+				end
+			end
+		end
+	end
+	return false
 end
+
 
 ------------------------------------------------------------
 -- Top bar with title and TP button
@@ -107,16 +118,16 @@ TPButton.Parent = TopBar
 
 -- 🌍 Island TP positions
 local IslandTP = {
-    Mainland = Vector3.new(1057,14,-124),
-    ["Blizzard Island"] = Vector3.new(-323,16,-3201),
-    ["Forrest Island"] = Vector3.new(-7097,20,4569),
-    ["Royal Island"] = Vector3.new(884,14,-4787),
-    ["Desert Island"] = Vector3.new(750,10,3293),
-    ["Glacier Island"] = Vector3.new(2664,-5,323),
-    ["Mountain Island"] = Vector3.new(-7524,10,221),
-    ["Jungle Island"] = Vector3.new(2765,16,2198),
-    ["Lunar Islands"] = Vector3.new(-3513,16,1889),
-    ["Volcano Island"] = Vector3.new(2416,19,-6695),
+	Mainland = Vector3.new(1057,14,-124),
+	["Blizzard Island"] = Vector3.new(-323,16,-3201),
+	["Forrest Island"] = Vector3.new(-7097,20,4569),
+	["Royal Island"] = Vector3.new(884,14,-4787),
+	["Desert Island"] = Vector3.new(750,10,3293),
+	["Glacier Island"] = Vector3.new(2664,-5,323),
+	["Mountain Island"] = Vector3.new(-7524,10,221),
+	["Jungle Island"] = Vector3.new(2765,16,2198),
+	["Lunar Islands"] = Vector3.new(-3513,16,1889),
+	["Volcano Island"] = Vector3.new(2416,19,-6695),
 }
 
 ------------------------------------------------------------
@@ -128,45 +139,47 @@ CurrentIsland.Value = "Unknown"
 CurrentIsland.Parent = Player
 
 local function detectIsland()
-    local islands = Workspace:FindFirstChild("Islands")
-    if not islands then
-        CurrentIsland.Value = "Unknown"
-        return nil
-    end
-    local char = Character
-    local parent = char and char.Parent
-    while parent and parent ~= Workspace do
-        if parent.Parent == islands then
-            CurrentIsland.Value = parent.Name
-            return parent
-        end
-        parent = parent.Parent
-    end
-    CurrentIsland.Value = "Unknown"
-    return nil
+	local islands = Workspace:FindFirstChild("Islands")
+	if not islands then
+		CurrentIsland.Value = "Unknown"
+		return nil
+	end
+
+	local char = Character
+	local parent = char and char.Parent
+	while parent and parent ~= Workspace do
+		if parent.Parent == islands then
+			CurrentIsland.Value = parent.Name
+			return parent
+		end
+		parent = parent.Parent
+	end
+
+	CurrentIsland.Value = "Unknown"
+	return nil
 end
 
 RunService.Heartbeat:Connect(function()
-    if Character then detectIsland() end
+	if Character then
+		detectIsland()
+	end
 end)
 
 TPButton.MouseButton1Click:Connect(function()
-    local playerIsland = CurrentIsland.Value
-    local tpPos = IslandTP[playerIsland]
-    if tpPos and Character and Character:FindFirstChild("HumanoidRootPart") then
-        Character:PivotTo(CFrame.new(tpPos))
-    end
+	local playerIsland = CurrentIsland.Value
+	local tpPos = IslandTP[playerIsland]
+	if tpPos and Character and Character:FindFirstChild("HumanoidRootPart") then
+		Character:PivotTo(CFrame.new(tpPos))
+	end
 end)
 
-------------------------------------------------------------
--- State
-------------------------------------------------------------
+-- 💾 State
 local selectedIsland: Instance? = nil
 
 local function safeConnect(signal, func)
-    local conn = signal:Connect(func)
-    table.insert(connections, conn)
-    return conn
+	local conn = signal:Connect(func)
+	table.insert(connections, conn)
+	return conn
 end
 
 ------------------------------------------------------------
@@ -189,9 +202,10 @@ IslandLayout.Parent = IslandList
 ------------------------------------------------------------
 -- Search Box
 ------------------------------------------------------------
+-- Search Box inside TopBar
 local searchBox = Instance.new("TextBox")
-searchBox.Size = UDim2.new(0.3, 0, 0.8, 0)
-searchBox.Position = UDim2.new(0.3, 0, 0.1, 0)
+searchBox.Size = UDim2.new(0.3, 0, 0.8, 0)  -- takes up space between title and TP button
+searchBox.Position = UDim2.new(0.3, 0, 0.1, 0) -- start after title
 searchBox.PlaceholderText = "Search horses..."
 searchBox.ClearTextOnFocus = false
 searchBox.Text = ""
@@ -202,9 +216,11 @@ searchBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 searchBox.BorderSizePixel = 0
 searchBox.Parent = TopBar
 
+-- Update horse list dynamically when typing
 searchBox:GetPropertyChangedSignal("Text"):Connect(function()
     refreshHorseList()
 end)
+
 
 ------------------------------------------------------------
 -- Horse List GUI
@@ -223,9 +239,388 @@ HorseLayout.Padding = UDim.new(0, 4)
 HorseLayout.Parent = HorseFrame
 
 ------------------------------------------------------------
--- (The rest of your functions and setup remain identically structured)
+-- Functions to build Island List and Horses
 ------------------------------------------------------------
+local excludedIslands = {
+	["Private"] = true,
+	["Tutorial Island"] = true,
+	["Stable Island"] = true,
+	["The Magical Forest"] = true
+}
 
+local function buildIslandList()
+	-- Destroy previous buttons
+	for _, child in ipairs(IslandList:GetChildren()) do
+		if child:IsA("TextButton") then child:Destroy() end
+	end
+
+	local islandsFolder = Workspace:WaitForChild("Islands")
+	if not islandsFolder then return end
+
+	-- Collect islands, excluding the specified ones
+	local islandsToShow = {}
+	local currentIslandName = CurrentIsland.Value
+
+	for _, island in ipairs(islandsFolder:GetChildren()) do
+		if island:IsA("Folder") and not excludedIslands[island.Name] then
+			table.insert(islandsToShow, island)
+		end
+	end
+
+	-- Sort so current island is first
+	table.sort(islandsToShow, function(a, b)
+		if a.Name == currentIslandName then return true end
+		if b.Name == currentIslandName then return false end
+		return a.Name < b.Name
+	end)
+
+	-- Create buttons
+	for _, island in ipairs(islandsToShow) do
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, -10, 0, 30)
+		btn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		btn.Text = "🌍 " .. island.Name
+		btn.Font = Enum.Font.SourceSansBold
+		btn.TextSize = 16
+		btn.Parent = IslandList
+
+		safeConnect(btn.MouseButton1Click, function()
+			selectedIsland = island
+			for _, other in ipairs(IslandList:GetChildren()) do
+				if other:IsA("TextButton") then
+					other.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+				end
+			end
+			btn.BackgroundColor3 = Color3.fromRGB(100, 130, 100)
+			refreshHorseList()
+		end)
+	end
+
+	task.defer(function()
+		IslandList.CanvasSize = UDim2.new(0, 0, 0, IslandLayout.AbsoluteContentSize.Y + 10)
+	end)
+end
+
+-- Refresh island list on respawn
+safeConnect(Player.CharacterAdded, function(newChar)
+	Character = newChar
+	task.wait(1)
+	buildIslandList()
+	refreshHorseList()
+end)
+
+------------------------------------------------------------
+-- Horse fetching function
+------------------------------------------------------------
+local function getWildHorses()
+	if not selectedIsland then return {} end
+	local wildHorses = {}
+
+	for _, horse in ipairs(selectedIsland:GetChildren()) do
+		if horse:IsA("Model")
+			and horse.Name:sub(1,1) == "{"
+			and horse:FindFirstChild("Humanoid")
+			and horse:FindFirstChild("HumanoidRootPart")
+			and horse:FindFirstChild("OverheadPart") then
+
+			local overhead = horse.OverheadPart:FindFirstChild("Overhead")
+			if overhead 
+				and overhead:FindFirstChild("NameLabel")
+				and overhead.NameLabel.Text == "Wild" then
+
+				local breed = overhead:FindFirstChild("BreedLabel") and overhead.BreedLabel.Text or "Unknown"
+				local dataAttr = horse:GetAttribute("data")
+				local parsedData = {}
+
+				if dataAttr then
+					pcall(function()
+						parsedData = HttpService:JSONDecode(dataAttr)
+					end)
+				end
+
+		local variants = parsedData.variants or {}
+local colour = variants.colour or "?"
+local mane = variants.maneColour or "?"
+local tail = variants.tailColour or "?"
+local hornColour = variants.hornColour or "None"
+local hornStyle = variants.hornStyle or "None"
+
+local friendliness = parsedData.friendliness or "?"
+local height = parsedData.height or "?"
+
+table.insert(wildHorses, {
+	instance = horse,
+	breed = breed,
+	colour = colour,
+	mane = mane,
+	tail = tail,
+	hornColour = hornColour,
+	hornStyle = hornStyle,
+	islandName = selectedIsland.Name,
+	friendliness = friendliness,
+	height = height
+})
+
+			end
+		end
+	end
+
+	return wildHorses
+end
+
+------------------------------------------------------------
+-- Refresh Horse List
+------------------------------------------------------------
+-- Table to track which horses have already triggered a beep
+local beepedHorses = {}
+
+------------------------------------------------------------
+-- Refresh Horse List
+------------------------------------------------------------
+function refreshHorseList()
+    -- Clear previous horse frames
+    for _, child in ipairs(HorseFrame:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+
+    if not selectedIsland then return end
+    local horses = getWildHorses()
+    local query = (searchBox.Text or ""):lower()
+
+    for _, info in ipairs(horses) do
+        local horse = info.instance
+
+        -- Combine searchable info
+        local combined = string.format("%s %s %s %s %s %s",
+            info.breed, info.colour, info.mane, info.tail, info.hornStyle, info.hornColour
+        ):lower()
+
+        -- Add friendliness & height to searchable string
+        local friendlyValue = math.floor((info.friendliness or 0) * 100 + 0.5)
+        local heightValue = math.floor(((info.height or 0) * 2.17 + 14.234) * 10 + 0.5) / 10
+        combined = combined .. " friendly:" .. friendlyValue .. " height:" .. heightValue
+
+        -- Skip horse if it doesn't match search
+        if query ~= "" and not string.find(combined, query) then
+            continue
+        end
+
+        -- 🟪 Detect horn + priority keywords
+        local isHorned = (info.hornStyle ~= "None" and info.hornStyle ~= "")
+        local isPriority = false
+        for _, kw in ipairs(priorityKeywords) do
+            if string.find(combined, kw) then
+                isPriority = true
+                break
+            end
+        end
+
+        -- 🎨 Pick color based on priority
+        local bgColor
+        if isHorned then
+            bgColor = Color3.fromRGB(90, 40, 120) -- purple for horned
+        elseif isPriority then
+            bgColor = Color3.fromRGB(150, 60, 120) -- pinkish for keyword
+        else
+            bgColor = Color3.fromRGB(60, 50, 40) -- normal brown
+        end
+
+        -- Main container for horse model + labels
+        local container = Instance.new("Frame")
+        container.Size = UDim2.new(1, -10, 0, 200)
+        container.BackgroundColor3 = bgColor
+        container.BorderSizePixel = 0
+        container.Parent = HorseFrame
+
+        local uicorner = Instance.new("UICorner")
+        uicorner.CornerRadius = UDim.new(0, 8)
+        uicorner.Parent = container
+
+        --------------------------------------------------------
+        -- Viewport for horse model
+        --------------------------------------------------------
+        local viewport = Instance.new("ViewportFrame")
+        viewport.Size = UDim2.new(1, 0, 0, 100)
+        viewport.Position = UDim2.new(0, 0, 0, 0)
+        viewport.BackgroundColor3 = Color3.fromRGB(30,30,30)
+        viewport.BorderSizePixel = 0
+        viewport.Parent = container
+
+        local horseClone = horse:Clone()
+        horseClone.Parent = viewport
+        if not horseClone.PrimaryPart then
+            horseClone.PrimaryPart = horseClone:FindFirstChild("HumanoidRootPart") or horseClone:FindFirstChildWhichIsA("BasePart")
+        end
+
+        local cam = Instance.new("Camera")
+        cam.CFrame = CFrame.new(Vector3.new(0,3,7), Vector3.new(0,1,0))
+        cam.Parent = viewport
+        viewport.CurrentCamera = cam
+
+        local rot = 0
+        local conn
+        conn = RunService.Heartbeat:Connect(function(dt)
+            if viewport.Parent then
+                rot += dt
+                horseClone:SetPrimaryPartCFrame(CFrame.Angles(0, rot, 0))
+            else
+                conn:Disconnect()
+            end
+        end)
+
+        local hoverButton = Instance.new("TextButton")
+        hoverButton.Size = UDim2.new(1, 0, 0, 100)
+        hoverButton.Position = UDim2.new(0, 0, 0, 0)
+        hoverButton.BackgroundTransparency = 1
+        hoverButton.Text = ""
+        hoverButton.Parent = container
+
+        --------------------------------------------------------
+        -- Labels
+        --------------------------------------------------------
+        local labelFrame = Instance.new("Frame")
+        labelFrame.Size = UDim2.new(1, 0, 0, 100)
+        labelFrame.Position = UDim2.new(0, 0, 0, 100)
+        labelFrame.BackgroundTransparency = 1
+        labelFrame.Parent = container
+
+        local breedLabel = Instance.new("TextLabel")
+        breedLabel.Size = UDim2.new(1, -10, 0, 20)
+        breedLabel.Position = UDim2.new(0, 5, 0, 0)
+        breedLabel.BackgroundTransparency = 1
+        breedLabel.Text = info.breed
+        breedLabel.TextColor3 = Color3.fromRGB(255,255,255)
+        breedLabel.Font = Enum.Font.SourceSansBold
+        breedLabel.TextSize = 18
+        breedLabel.TextXAlignment = Enum.TextXAlignment.Center
+        breedLabel.Parent = labelFrame
+
+        -- Colors + mane + tail
+        local colorsLabel = Instance.new("TextLabel")
+        colorsLabel.Size = UDim2.new(1, -10, 0, 18)
+        colorsLabel.Position = UDim2.new(0, 5, 0, 22)
+        colorsLabel.BackgroundTransparency = 1
+        colorsLabel.Text = string.format("Body: (%s)  Mane: (%s)  Tail: (%s)",
+            info.colour, info.mane, info.tail)
+        colorsLabel.TextColor3 = Color3.fromRGB(220,220,220)
+        colorsLabel.Font = Enum.Font.SourceSans
+        colorsLabel.TextSize = 14
+        colorsLabel.TextXAlignment = Enum.TextXAlignment.Center
+        colorsLabel.Parent = labelFrame
+
+        -- Friendliness + Height
+        local statsLabel = Instance.new("TextLabel")
+        statsLabel.Size = UDim2.new(1, -10, 0, 18)
+        statsLabel.Position = UDim2.new(0, 5, 0, 40)
+        statsLabel.BackgroundTransparency = 1
+        statsLabel.Text = string.format("Friendly: %d  •  Height: %.1f hands", friendlyValue, heightValue)
+        statsLabel.TextColor3 = Color3.fromRGB(200,200,255)
+        statsLabel.Font = Enum.Font.SourceSans
+        statsLabel.TextSize = 14
+        statsLabel.TextXAlignment = Enum.TextXAlignment.Center
+        statsLabel.Parent = labelFrame
+
+        local islandLabel = Instance.new("TextLabel")
+        islandLabel.Size = UDim2.new(1, -10, 0, 18)
+        islandLabel.Position = UDim2.new(0, 5, 0, 58)
+        islandLabel.BackgroundTransparency = 1
+        islandLabel.Text = info.islandName
+        islandLabel.TextColor3 = Color3.fromRGB(180,180,180)
+        islandLabel.Font = Enum.Font.SourceSansItalic
+        islandLabel.TextSize = 14
+        islandLabel.TextXAlignment = Enum.TextXAlignment.Center
+        islandLabel.Parent = labelFrame
+
+        --------------------------------------------------------
+        -- Teleport on click
+        --------------------------------------------------------
+        safeConnect(hoverButton.MouseButton1Click, function()
+            local playerIsland = CurrentIsland.Value
+            if info.islandName == playerIsland then
+                if Character and Character:FindFirstChild("HumanoidRootPart") and horse:FindFirstChild("HumanoidRootPart") then
+                    Character:PivotTo(CFrame.new(horse.HumanoidRootPart.Position + Vector3.new(0,3,0)))
+                end
+            else
+                local tpPos = IslandTP[playerIsland]
+                if tpPos and Character and Character:FindFirstChild("HumanoidRootPart") then
+                    Character:PivotTo(CFrame.new(tpPos))
+                end
+            end
+        end)
+    end
+
+    task.defer(function()
+        HorseFrame.CanvasSize = UDim2.new(0, 0, 0, HorseLayout.AbsoluteContentSize.Y + 10)
+    end)
+end
+
+
+------------------------------------------------------------
+-- 🟣 Update Island Button Highlights
+------------------------------------------------------------
+task.spawn(function()
+	while true do
+		local islandsFolder = Workspace:FindFirstChild("Islands")
+		if islandsFolder then
+			for _, button in ipairs(IslandList:GetChildren()) do
+				if button:IsA("TextButton") then
+					local island = islandsFolder:FindFirstChild(string.gsub(button.Text, "🌍 ", ""))
+					if island then
+						if islandHasPriorityHorses(island) then
+							-- 🟣 Highlight for islands with special horses
+							button.BackgroundColor3 = Color3.fromRGB(120, 60, 150)
+						elseif selectedIsland == island then
+							-- 🟢 Selected island
+							button.BackgroundColor3 = Color3.fromRGB(100, 130, 100)
+						else
+							-- Default color
+							button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+						end
+					end
+				end
+			end
+		end
+		task.wait(1)
+	end
+end)
+
+------------------------------------------------------------
+-- Draggable GUI
+------------------------------------------------------------
+local dragInput, mousePos, framePos
+Frame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragInput = input
+		mousePos = UIS:GetMouseLocation()
+		framePos = Frame.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragInput = nil
+			end
+		end)
+	end
+end)
+
+RunService.Heartbeat:Connect(function()
+	if dragInput then
+		local delta = UIS:GetMouseLocation() - mousePos
+		Frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+	end
+end)
+
+------------------------------------------------------------
+-- Auto refresh
+------------------------------------------------------------
+task.spawn(function()
+	while true do
+		refreshHorseList()
+		task.wait(2)
+	end
+end)
+
+------------------------------------------------------------
 -- Initial setup
+------------------------------------------------------------
 buildIslandList()
 GUI.Enabled = true
