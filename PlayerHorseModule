@@ -286,6 +286,65 @@ UserInputService.JumpRequest:Connect(function()
 end)
 
 ----------------------------------------------------
+-- REPLACE HUMANOID
+----------------------------------------------------
+function PlayerModule.ReplaceHumanoid()
+    local player = game.Players.LocalPlayer
+    local Char = player.Character
+    if not Char then
+        warn("[PlayerModule] No character found.")
+        return nil
+    end
+
+    local Cam = workspace.CurrentCamera
+    local CamCFrame = Cam.CFrame
+
+    local OldHumanoid = Char:FindFirstChildWhichIsA("Humanoid")
+    if not OldHumanoid then
+        warn("[PlayerModule] No humanoid found in character.")
+        return nil
+    end
+
+    -- Clone humanoid
+    local NewHumanoid = OldHumanoid:Clone()
+    NewHumanoid.Parent = Char
+
+    -- Temporarily detach character
+    player.Character = nil
+
+    -- Disable some states
+    NewHumanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+    NewHumanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+    NewHumanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    NewHumanoid.BreakJointsOnDeath = true
+
+    -- Destroy old humanoid
+    OldHumanoid:Destroy()
+
+    -- Reassign character and camera
+    player.Character = Char
+    Cam.CameraSubject = NewHumanoid
+    Cam.CFrame = CamCFrame
+
+    -- Hide name display
+    NewHumanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+
+    -- Refresh Animate script
+    local Animate = Char:FindFirstChild("Animate")
+    if Animate then
+        Animate.Disabled = true
+        task.wait()
+        Animate.Disabled = false
+    end
+
+    -- Restore full health
+    NewHumanoid.Health = NewHumanoid.MaxHealth
+
+    print("[PlayerModule] Humanoid replaced successfully for:", player.Name)
+    return NewHumanoid
+end
+
+----------------------------------------------------
 -- RETURN
 ----------------------------------------------------
 return PlayerModule
