@@ -378,182 +378,108 @@ local beepedHorses = {}
 ------------------------------------------------------------
 -- Refresh Horse List
 ------------------------------------------------------------
-function refreshHorseList()
-    -- Clear previous horse frames
-    for _, child in ipairs(HorseFrame:GetChildren()) do
-        if child:IsA("Frame") then child:Destroy() end
-    end
+local function refreshHorseList()
+    if not HorseListScrollingFrame then return end
+    HorseListScrollingFrame:ClearAllChildren()
 
-    if not selectedIsland then return end
-    local horses = getWildHorses()
-    local query = (searchBox.Text or ""):lower()
+    local horses = getAllHorses()
+    local foundPriority = false
 
     for _, info in ipairs(horses) do
-        local horse = info.instance
-
-        -- Combine searchable info
-        local combined = string.format("%s %s %s %s %s %s",
-            info.breed, info.colour, info.mane, info.tail, info.hornStyle, info.hornColour
-        ):lower()
-
-        -- Add friendliness & height to searchable string
-        local friendlyValue = math.floor((info.friendliness or 0) * 100 + 0.5)
-        local heightValue = math.floor(((info.height or 0) * 2.17 + 14.234) * 10 + 0.5) / 10
-        combined = combined .. " friendly:" .. friendlyValue .. " height:" .. heightValue
-
-        -- Skip horse if it doesn't match search
-        if query ~= "" and not string.find(combined, query) then
-            continue
-        end
-
-        -- 🟪 Detect horn + priority keywords
+        local name = info.name or "Unknown Horse"
+        local combined = string.lower(name)
+        local friendlyness, height = "", ""
         local isHorned = (info.hornStyle ~= "None" and info.hornStyle ~= "")
         local isPriority = false
-        for _, kw in ipairs(priorityKeywords) do
-            if string.find(combined, kw) then
-                isPriority = true
-                break
+        local isNatDyed = false
+
+        -- 🧠 Read data JSON safely
+        if info.instance and info.instance:GetAttribute("data") then
+            local ok, parsed = pcall(function()
+                return HttpService:JSONDecode(info.instance:GetAttribute("data"))
+            end)
+            if ok and parsed then
+                -- Handle Friendlyness
+                if parsed.friendliness then
+                    friendlyness = math.floor(parsed.friendliness * 100 + 0.5)
+                end
+                -- Handle Height
+                if parsed.height then
+                    local hands = math.floor(parsed.height * 10 + 14)
+                    local tenth = math.floor(((parsed.height * 10 + 14) % 1) * 10)
+                    height = string.format("%.1f", hands + (tenth / 10))
+                end
+                -- Handle Natural Dye Flag
+                if parsed.isNatDyed == true then
+                    isNatDyed = true
+                    isPriority = true
+                end
             end
         end
 
-        -- 🎨 Pick color based on priority
+        -- 🔍 Keyword-based priority check
+        if not isPriority then
+            for _, kw in ipairs(priorityKeywords) do
+                if string.find(combined, kw) then
+                    isPriority = true
+                    break
+                end
+            end
+        end
+
+        -- 🎨 Color selection
         local bgColor
         if isHorned then
-            bgColor = Color3.fromRGB(90, 40, 120) -- purple for horned
+            bgColor = Color3.fromRGB(90, 40, 120) -- Purple for horned
+        elseif isNatDyed then
+            bgColor = Color3.fromRGB(200, 150, 30) -- Gold for nat dyed
         elseif isPriority then
-            bgColor = Color3.fromRGB(150, 60, 120) -- pinkish for keyword
+            bgColor = Color3.fromRGB(150, 60, 120) -- Pink for keyword
         else
-            bgColor = Color3.fromRGB(60, 50, 40) -- normal brown
+            bgColor = Color3.fromRGB(60, 50, 40) -- Normal brown
         end
 
-        -- Main container for horse model + labels
-        local container = Instance.new("Frame")
-        container.Size = UDim2.new(1, -10, 0, 200)
-        container.BackgroundColor3 = bgColor
-        container.BorderSizePixel = 0
-        container.Parent = HorseFrame
+        -- 💬 Format info text
+        local infoText = string.format(
+            "Body: (%s %s)  Mane: (%s) Tail: (%s)\nFriendly: %s • Height: %s hands",
+            info.color or "Unknown",
+            info.breed or "",
+            info.mane or "Unknown",
+            info.tail or "Unknown",
+            friendlyness ~= "" and friendlyness or "?",
+            height ~= "" and height or "?"
+        )
 
-        local uicorner = Instance.new("UICorner")
-        uicorner.CornerRadius = UDim.new(0, 8)
-        uicorner.Parent = container
+        -- 🟢 Create Button
+        local horseButton = HorseListScrollingFrame:CreateButton({
+            Name = name,
+            Color = bgColor,
+            Text = infoText,
+            Callback = function()
+                if info.instance and info.instance:FindFirstChild("HumanoidRootPart") then
+                    local hrp = info.instance:FindFirstChild("HumanoidRootPart")
+                    local pos = hrp.Position
+                    LocalPlayer.Character:PivotTo(CFrame.new(pos + Vector3.new(0, 3, 0)))
+                end
+            end
+        })
 
-        --------------------------------------------------------
-        -- Viewport for horse model
-        --------------------------------------------------------
-        local viewport = Instance.new("ViewportFrame")
-        viewport.Size = UDim2.new(1, 0, 0, 100)
-        viewport.Position = UDim2.new(0, 0, 0, 0)
-        viewport.BackgroundColor3 = Color3.fromRGB(30,30,30)
-        viewport.BorderSizePixel = 0
-        viewport.Parent = container
-
-        local horseClone = horse:Clone()
-        horseClone.Parent = viewport
-        if not horseClone.PrimaryPart then
-            horseClone.PrimaryPart = horseClone:FindFirstChild("HumanoidRootPart") or horseClone:FindFirstChildWhichIsA("BasePart")
+        -- 🔊 Play sound once per found priority
+        if isPriority and not info._alerted then
+            foundPriority = true
+            info._alerted = true
+            task.spawn(function()
+                local s = Instance.new("Sound")
+                s.SoundId = "rbxassetid://6534947241"
+                s.Volume = 2
+                s.PlayOnRemove = true
+                s.Parent = workspace
+                s:Destroy()
+            end)
         end
-
-        local cam = Instance.new("Camera")
-        cam.CFrame = CFrame.new(Vector3.new(0,3,7), Vector3.new(0,1,0))
-        cam.Parent = viewport
-        viewport.CurrentCamera = cam
-
-        local rot = 0
-        local conn
-        conn = RunService.Heartbeat:Connect(function(dt)
-            if viewport.Parent then
-                rot += dt
-                horseClone:SetPrimaryPartCFrame(CFrame.Angles(0, rot, 0))
-            else
-                conn:Disconnect()
-            end
-        end)
-
-        local hoverButton = Instance.new("TextButton")
-        hoverButton.Size = UDim2.new(1, 0, 0, 100)
-        hoverButton.Position = UDim2.new(0, 0, 0, 0)
-        hoverButton.BackgroundTransparency = 1
-        hoverButton.Text = ""
-        hoverButton.Parent = container
-
-        --------------------------------------------------------
-        -- Labels
-        --------------------------------------------------------
-        local labelFrame = Instance.new("Frame")
-        labelFrame.Size = UDim2.new(1, 0, 0, 100)
-        labelFrame.Position = UDim2.new(0, 0, 0, 100)
-        labelFrame.BackgroundTransparency = 1
-        labelFrame.Parent = container
-
-        local breedLabel = Instance.new("TextLabel")
-        breedLabel.Size = UDim2.new(1, -10, 0, 20)
-        breedLabel.Position = UDim2.new(0, 5, 0, 0)
-        breedLabel.BackgroundTransparency = 1
-        breedLabel.Text = info.breed
-        breedLabel.TextColor3 = Color3.fromRGB(255,255,255)
-        breedLabel.Font = Enum.Font.SourceSansBold
-        breedLabel.TextSize = 18
-        breedLabel.TextXAlignment = Enum.TextXAlignment.Center
-        breedLabel.Parent = labelFrame
-
-        -- Colors + mane + tail
-        local colorsLabel = Instance.new("TextLabel")
-        colorsLabel.Size = UDim2.new(1, -10, 0, 18)
-        colorsLabel.Position = UDim2.new(0, 5, 0, 22)
-        colorsLabel.BackgroundTransparency = 1
-        colorsLabel.Text = string.format("Body: (%s)  Mane: (%s)  Tail: (%s)",
-            info.colour, info.mane, info.tail)
-        colorsLabel.TextColor3 = Color3.fromRGB(220,220,220)
-        colorsLabel.Font = Enum.Font.SourceSans
-        colorsLabel.TextSize = 14
-        colorsLabel.TextXAlignment = Enum.TextXAlignment.Center
-        colorsLabel.Parent = labelFrame
-
-        -- Friendliness + Height
-        local statsLabel = Instance.new("TextLabel")
-        statsLabel.Size = UDim2.new(1, -10, 0, 18)
-        statsLabel.Position = UDim2.new(0, 5, 0, 40)
-        statsLabel.BackgroundTransparency = 1
-        statsLabel.Text = string.format("Friendly: %d  •  Height: %.1f hands", friendlyValue, heightValue)
-        statsLabel.TextColor3 = Color3.fromRGB(200,200,255)
-        statsLabel.Font = Enum.Font.SourceSans
-        statsLabel.TextSize = 14
-        statsLabel.TextXAlignment = Enum.TextXAlignment.Center
-        statsLabel.Parent = labelFrame
-
-        local islandLabel = Instance.new("TextLabel")
-        islandLabel.Size = UDim2.new(1, -10, 0, 18)
-        islandLabel.Position = UDim2.new(0, 5, 0, 58)
-        islandLabel.BackgroundTransparency = 1
-        islandLabel.Text = info.islandName
-        islandLabel.TextColor3 = Color3.fromRGB(180,180,180)
-        islandLabel.Font = Enum.Font.SourceSansItalic
-        islandLabel.TextSize = 14
-        islandLabel.TextXAlignment = Enum.TextXAlignment.Center
-        islandLabel.Parent = labelFrame
-
-        --------------------------------------------------------
-        -- Teleport on click
-        --------------------------------------------------------
-        safeConnect(hoverButton.MouseButton1Click, function()
-            local playerIsland = CurrentIsland.Value
-            if info.islandName == playerIsland then
-                if Character and Character:FindFirstChild("HumanoidRootPart") and horse:FindFirstChild("HumanoidRootPart") then
-                    Character:PivotTo(CFrame.new(horse.HumanoidRootPart.Position + Vector3.new(0,3,0)))
-                end
-            else
-                local tpPos = IslandTP[playerIsland]
-                if tpPos and Character and Character:FindFirstChild("HumanoidRootPart") then
-                    Character:PivotTo(CFrame.new(tpPos))
-                end
-            end
-        end)
     end
-
-    task.defer(function()
-        HorseFrame.CanvasSize = UDim2.new(0, 0, 0, HorseLayout.AbsoluteContentSize.Y + 10)
-    end)
 end
+
 
 
 ------------------------------------------------------------
