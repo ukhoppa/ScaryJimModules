@@ -303,7 +303,7 @@ function PlayerModule.PlayShrineMusic()
 	shrineSound = Instance.new("Sound")
 	shrineSound.Name = "ShrineTrack"
 	shrineSound.SoundId = "rbxassetid://9043981741"
-	shrineSound.Volume = 1 -- Roblox max volume is 1, not 100
+	shrineSound.Volume = 100
 	shrineSound.Looped = true
 	shrineSound.Parent = SoundService
 	shrineSound:Play()
