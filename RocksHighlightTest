@@ -119,9 +119,9 @@ local function faceAndTP(part)
 	end
  	part.CollisionGroupId = 1
 	local dir = (part.Position - hrp.Position).Unit
-	hrp.CFrame = CFrame.new(part.Position - dir * 5 + Vector3.new(0, 2, 0), part.Position)
+	hrp.CFrame = CFrame.new(part.Position - dir * 5 + Vector3.new(0, -3, 0), part.Position)
 	Camera.CameraType = Enum.CameraType.Custom
-	Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 2, 0), part.Position)
+	Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0, -3, 0), part.Position)
 end
 
 local function clickPart(part)
