@@ -118,10 +118,20 @@ local function faceAndTP(part)
 		return
 	end
  	part.CollisionGroupId = 1
-	local dir = (part.Position - hrp.Position).Unit
-	hrp.CFrame = CFrame.new(part.Position - dir * 1 + Vector3.new(0, -8, 0), part.Position)
-	Camera.CameraType = Enum.CameraType.Custom
-	Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 2, 0), part.Position)
+local offsetDown = Vector3.new(0, -8, 0) -- 8 studs below
+local targetPos = part.Position + offsetDown
+
+-- Move player
+hrp.CFrame = CFrame.new(targetPos, part.Position)
+
+-- Make camera look at the part
+Camera.CameraType = Enum.CameraType.Custom
+Camera.CFrame = CFrame.new(hrp.Position, part.Position)
+
+--	local dir = (part.Position - hrp.Position).Unit
+	--hrp.CFrame = CFrame.new(part.Position - dir * 5 + Vector3.new(0, 2, 0), part.Position)
+	--Camera.CameraType = Enum.CameraType.Custom
+	--Camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 2, 0), part.Position)
 end
 
 local function clickPart(part)
