@@ -38,7 +38,7 @@ local priorityKeywords = {
 	"fade","flowery","glacier","glow","icey","leafy","limestone","lava",
 	"mossy","moonstone","neon","obsidian","pearly","prismatic","quartz",
 	"ruby","sandstone","sapphire","snowcap","snowy","space","spark","spiral",
-	"spot","streak","stripes","topaz","twist","volcanic","yruskjottur","zebra"
+	"streak","stripes","topaz","twist","volcanic","yruskjottur","zebra"
 }
 
 local function islandHasPriorityHorses(island)
