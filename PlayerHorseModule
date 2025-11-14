@@ -334,49 +334,69 @@ function PlayerModule.ReplaceHumanoid()
     local Cam = workspace.CurrentCamera
     local CamCFrame = Cam.CFrame
 
-    local OldHumanoid = Char:FindFirstChildWhichIsA("Humanoid")
-    if not OldHumanoid then
-        warn("[PlayerModule] No humanoid found in character.")
-        return nil
+    local function replaceHumanoidIn(model)
+        if not model then return nil end
+
+        local oldH = model:FindFirstChildWhichIsA("Humanoid")
+        if not oldH then
+            warn("[PlayerModule] No humanoid found in:", model.Name)
+            return nil
+        end
+
+        local newH = oldH:Clone()
+        newH.Parent = model
+
+        -- Disable unwanted states
+        newH:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        newH:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+        newH:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        newH.BreakJointsOnDeath = true
+        newH.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+
+        oldH:Destroy()
+
+        -- Refresh Animate script if present
+        local animate = model:FindFirstChild("Animate")
+        if animate then
+            animate.Disabled = true
+            task.wait()
+            animate.Disabled = false
+        end
+
+        newH.Health = newH.MaxHealth
+        return newH
     end
 
-    -- Clone humanoid
-    local NewHumanoid = OldHumanoid:Clone()
-    NewHumanoid.Parent = Char
+    --------------------------
+    -- PLAYER HUMANOID REPLACE
+    --------------------------
+    local newPlayerHumanoid
+    do
+        local oldHumanoid = Char:FindFirstChildWhichIsA("Humanoid")
+        if oldHumanoid then
+            newPlayerHumanoid = replaceHumanoidIn(Char)
 
-    -- Temporarily detach character
-    player.Character = nil
+            -- Reassign character to refresh controller
+            player.Character = nil
+            task.wait()
+            player.Character = Char
 
-    -- Disable some states
-    NewHumanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-    NewHumanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-    NewHumanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-    NewHumanoid.BreakJointsOnDeath = true
-
-    -- Destroy old humanoid
-    OldHumanoid:Destroy()
-
-    -- Reassign character and camera
-    player.Character = Char
-    Cam.CameraSubject = NewHumanoid
-    Cam.CFrame = CamCFrame
-
-    -- Hide name display
-    NewHumanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-
-    -- Refresh Animate script
-    local Animate = Char:FindFirstChild("Animate")
-    if Animate then
-        Animate.Disabled = true
-        task.wait()
-        Animate.Disabled = false
+            Cam.CameraSubject = newPlayerHumanoid
+            Cam.CFrame = CamCFrame
+        end
     end
 
-    -- Restore full health
-    NewHumanoid.Health = NewHumanoid.MaxHealth
+    -------------------------
+    -- HORSE HUMANOID REPLACE
+    -------------------------
+    local horse = PlayerModule.LocalHorse or PlayerModule.FindLocalHorse()
+    local newHorseHumanoid
+    if horse then
+        newHorseHumanoid = replaceHumanoidIn(horse)
+    end
 
-    print("[PlayerModule] Humanoid replaced successfully for:", player.Name)
-    return NewHumanoid
+    print("[PlayerModule] Humanoid replaced. Player + Horse (if applicable).")
+    return newPlayerHumanoid, newHorseHumanoid
 end
 
 ----------------------------------------------------
